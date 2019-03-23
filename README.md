@@ -9,7 +9,7 @@ Requirements
 ------------
 
 * [KUSANAGI framework](http://kusanagi.io) 1.0+
-* [Python](https://www.python.org/downloads/) 3.4+
+* [Python](https://www.python.org/downloads/) 3.5+
 * [libzmq](http://zeromq.org/intro:get-the-software) 4.1.5+
 
 Installation
@@ -21,22 +21,10 @@ Enter the following command to install the SDK in your local environment:
 $ pip install kusanagi-sdk-python
 ```
 
-To run all unit tests or code coverage, first install requirements:
+Or to run all unit tests and code coverage:
 
 ```
-$ pip install -r pip-requirements.txt
-```
-
-Then run all unit tests with the following command:
-
-```
-$ pytest --cache-clear
-```
-
-Or, for code coverage, use the following command:
-
-```
-$ pytest -q --cov=kusanagi --cov-report=term
+$ python setup.py tests
 ```
 
 Getting Started
