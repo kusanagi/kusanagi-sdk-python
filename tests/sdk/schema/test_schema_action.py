@@ -31,11 +31,13 @@ def test_sdk_schema_action_defaults():
     assert not action.has_remote_calls()
     assert action.get_remote_calls() == []
     assert not action.has_return()
-    assert action.get_return_type() == ''
     assert action.get_tags() == []
     assert not action.has_tag('foo')
     assert action.get_params() == []
     assert not action.has_param('foo')
+
+    with pytest.raises(ActionSchemaError):
+        assert action.get_return_type()
 
     with pytest.raises(ActionSchemaError):
         action.get_param_schema('foo')

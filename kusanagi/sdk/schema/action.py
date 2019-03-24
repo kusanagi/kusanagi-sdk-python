@@ -150,6 +150,8 @@ class ActionSchema(object):
         :param data: Object to get entity from.
         :type data: dict
 
+        :raises: ActionSchemaError
+
         :rtype: dict
 
         """
@@ -375,11 +377,18 @@ class ActionSchema(object):
     def get_return_type(self):
         """Get the data type of the returned action value.
 
+        :raises: ActionSchemaError
+
         :rtype: str
 
         """
 
-        return self.__payload.get('return/type', '')
+        if not self.__payload.path_exists('return/type'):
+            name = self.get_name()
+            error = 'Return value not defined for action: {}'
+            raise ActionSchemaError(error.format(name))
+
+        return self.__payload.get('return/type')
 
     def get_params(self):
         """Get the parameters names defined for the action.
@@ -407,6 +416,8 @@ class ActionSchema(object):
 
         :param name: Parameter name.
         :type name: str
+
+        :raises: ActionSchemaError
 
         :rtype: ParamSchema
 
@@ -444,6 +455,8 @@ class ActionSchema(object):
 
         :param name: File parameter name.
         :type name: str
+
+        :raises: ActionSchemaError
 
         :rtype: FileSchema
 
