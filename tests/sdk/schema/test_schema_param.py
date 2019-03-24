@@ -22,8 +22,6 @@ def test_sdk_schema_param(read_json):
     assert not schema.is_exclusive_max()
     assert schema.get_min() == -sys.maxsize - 1
     assert not schema.is_exclusive_min()
-    assert schema.get_max_length() == -1
-    assert schema.get_min_length() == -1
     assert schema.get_max_items() == -1
     assert schema.get_min_items() == -1
     assert not schema.has_unique_items()
@@ -55,8 +53,6 @@ def test_sdk_schema_param(read_json):
     assert schema.is_exclusive_max()
     assert schema.get_min() == payload.get('min')
     assert schema.is_exclusive_min()
-    assert schema.get_max_length() == payload.get('max_length')
-    assert schema.get_min_length() == payload.get('min_length')
     assert schema.get_max_items() == payload.get('max_items')
     assert schema.get_min_items() == payload.get('min_items')
     assert schema.has_unique_items()

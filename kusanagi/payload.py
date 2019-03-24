@@ -100,7 +100,6 @@ FIELD_MAPPINGS = {
     'name': 'n',
     'network': 'n',
     'min_items': 'ni',
-    'min_length': 'nl',
     'optional': 'o',
     'origin': 'o',
     'out': 'o',
@@ -152,7 +151,6 @@ FIELD_MAPPINGS = {
     'writes': 'w',
     'timeout': 'x',
     'max_items': 'xi',
-    'max_length': 'xl',
     }
 
 # Transport path for field that must be merged when service calls are made

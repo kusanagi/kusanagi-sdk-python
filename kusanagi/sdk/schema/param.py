@@ -168,28 +168,6 @@ class ParamSchema(object):
 
         return self.__payload.get('exclusive_min', False)
 
-    def get_max_length(self):
-        """Get max length defined for the parameter.
-
-        result is -1 when this values is not defined.
-
-        :rtype: int
-
-        """
-
-        return self.__payload.get('max_length', -1)
-
-    def get_min_length(self):
-        """Get minimum length defined for the parameter.
-
-        result is -1 when this values is not defined.
-
-        :rtype: int
-
-        """
-
-        return self.__payload.get('min_length', -1)
-
     def get_max_items(self):
         """Get maximum number of items allowed for the parameter.
 
