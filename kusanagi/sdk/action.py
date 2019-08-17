@@ -192,7 +192,7 @@ def runtime_call(address, transport, action, callee, **kwargs):
 
     command = CommandPayload.new('runtime-call', 'service', args=args)
 
-    timeout = kwargs.get('timeout') or 10000
+    timeout = kwargs.get('timeout') or 30000
     channel = ipc(address)
     socket = CONTEXT.socket(zmq.REQ)
     try:
