@@ -12,7 +12,7 @@ setup(
     license=__license__,
     author='Jerónimo Albi',
     author_email='jeronimo.albi@kusanagi.io',
-    description='Python SDK for the KUSANAGI™ framework',
+    description='Python SDK for the KUSANAGI framework',
     platforms=['POSIX'],
     download_url='https://github.com/kusanagi/kusanagi-sdk-python/releases',
     packages=find_packages(exclude=['tests']),
