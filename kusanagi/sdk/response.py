@@ -98,7 +98,7 @@ class Response(Api):
 
         return self.__return_value != NO_RETURN_VALUE
 
-    def get_return_value(self):
+    def get_return(self):
         """Get the return value returned by the called Service.
 
         :raises: NoReturnValueDefined
