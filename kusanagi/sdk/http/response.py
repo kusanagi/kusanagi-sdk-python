@@ -20,8 +20,10 @@ class HttpResponse(object):
 
         # Save header name mappings to avoid changing use setted header name
         self.__header_names = {}
+
         # Set response headers
         headers = kwargs.get('headers')
+
         if headers:
             # Headers should be a list of tuples
             if isinstance(headers, dict):
@@ -218,7 +220,7 @@ class HttpResponse(object):
 
         return self.__headers
 
-    def set_header(self, name, value):
+    def set_header(self, name, value, overwrite=False):
         """Set a HTTP with the given name and value.
 
         Sets a header in the HTTP response with the specified name and value.
@@ -227,13 +229,34 @@ class HttpResponse(object):
         :type name: str
         :param value: The header value.
         :type value: str
+        :param overwrite: Determines if an existing header should be overwritten.
+        :type overwrite: bool
 
         :rtype: HttpResponse
 
         """
 
-        self.__headers[name] = value
-        self.__header_names[name.upper()] = name
+        upper_name = name.upper()
+
+        if upper_name in self.__header_names and name not in self.__headers:
+            orig_name = self.__header_names[upper_name]
+
+            # TODO value should be appended last (dict does not exist)
+            self.__headers[name] = value
+
+            if not overwrite:
+                self.__headers[name].extend(self.__headers[orig_name])
+
+            del self.__headers[orig_name]
+
+            self.__header_names[upper_name] = name
+        else:
+            if overwrite and name in self.__headers:
+                del self.__headers[name]
+
+            self.__headers[name] = value
+            self.__header_names[name.upper()] = name
+
         return self
 
     def has_body(self):
