@@ -5,6 +5,7 @@
 #
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
+from ..errors import KusanagiError
 from ..payload import get_path
 from ..payload import Payload
 
@@ -30,6 +31,10 @@ TYPE_CLASSES = {
     TYPE_STRING: str,
     TYPE_BINARY: bytes,
     }
+
+
+class InvalidFallback(KusanagiError):
+    pass
 
 
 def payload_to_param(payload):
@@ -75,19 +80,35 @@ class Param(object):
 
     """
 
-    def __init__(self, name, **kwargs):
-        self.__name = name
-        self.__value = kwargs.get('value', EMPTY)
-        self.__type = kwargs.get('type')
-        self.__exists = kwargs.get('exists', False)
+    def __init__(self, name, value='', type=TYPE_STRING, exists=True):
+        """
+        Constructor.
 
-        if self.__value == EMPTY:
-            self.__value = ''
-            self.__type = TYPE_STRING
-        elif not self.__type:
-            self.__type = self.resolve_type(self.__value)
-        elif (self.__value is not None) and self.__type not in TYPE_CLASSES:
-            self.__type = TYPE_STRING
+        :param name: Name of the parameter.
+        :param value: Optional value for the parameter.
+        :param type: Optional type for the parameter value.
+        :param exists: Optional flag to know if the parameter exists in the service call.
+
+        :raises: TypeError
+
+        """
+
+        # Invalid parameter types are treated as string parameters
+        if type not in TYPE_CLASSES:
+            type = TYPE_STRING
+
+        # Check that the value respects the parameter type
+        if type == TYPE_NULL and value is not None:
+            raise TypeError('Value must be null')
+        else:
+            type_cls = TYPE_CLASSES[type]
+            if not isinstance(type_cls, value):
+                raise TypeError(f'Value must be {type}')
+
+        self.__name = name
+        self.__value = value
+        self.__type = type
+        self.__exists = exists
 
     @classmethod
     def resolve_type(cls, value):
@@ -134,15 +155,34 @@ class Param(object):
 
         return self.__type
 
-    def get_value(self):
+    def get_value(self, fallback=None):
         """Get parameter value.
 
         Value is returned using the parameter data type for casting.
 
+        :param fallback: The optional fallback value, which must be null or conform to the data type. If a callable is 
+        provided it will be evaluated if the fallback is to be returned.
+        :type fallback: mixed
         :returns: The parameter value.
         :rtype: object
+        :raises: InvalidFallback
 
         """
+
+        if not self.__exists:
+            if self.__type == TYPE_NULL:
+                return
+
+            if fallback is not None:
+                if callable(fallback):
+                    fallback = fallback()
+
+                name = self.__name
+
+                if not isinstance(fallback, TYPE_CLASSES[self.__type]):
+                    raise InvalidFallback(f'Invalid data type for fallback of parameter: {name}')
+
+                return fallback
 
         return self.__value
 
