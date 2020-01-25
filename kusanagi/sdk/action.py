@@ -195,12 +195,14 @@ def runtime_call(address, transport, action, callee, **kwargs):
     timeout = kwargs.get('timeout') or 30000
     channel = ipc(address)
     socket = CONTEXT.socket(zmq.REQ)
+
     try:
         socket.connect(channel)
         socket.send_multipart([RUNTIME_CALL, pack(command)], zmq.NOBLOCK)
         poller = zmq.Poller()
         poller.register(socket, zmq.POLLIN)
         event = dict(poller.poll(timeout))
+
         if event.get(socket) == zmq.POLLIN:
             stream = socket.recv()
         else:
@@ -227,6 +229,7 @@ def runtime_call(address, transport, action, callee, **kwargs):
         raise ApiError(payload.get('command_reply/result/error/message'))
 
     result = payload.get('command_reply/result')
+
     return (get_path(result, 'transport'), get_path(result, 'return'))
 
 
@@ -895,6 +898,7 @@ class Action(Api):
         # Get address for current action's service
         path = '/'.join([self.get_name(), self.get_version(), 'address'])
         address = self._registry.get(path, None)
+
         if not address:
             msg = 'Failed to get address for Service: "{}" ({})'.format(
                 self.get_name(),
@@ -904,6 +908,7 @@ class Action(Api):
 
         # Check that files are supported by the service if local files are used
         files = kwargs.get('files')
+
         if files:
             for file in files:
                 if not file.is_local():
@@ -916,23 +921,34 @@ class Action(Api):
 
                 raise NoFileServerError(self.get_name(), self.get_version())
 
-        transport, result = runtime_call(
-            address,
-            self.__runtime_transport,
-            self.get_action_name(),
-            [service, version, action],
-            **kwargs
-            )
+        transport = None
+        exc = None
 
-        # Clear default to succesfully merge dictionaries. Without
-        # this merge would be done with a default value that is not
-        # part of the payload.
-        self.__transport.set_defaults({})
-        for path in TRANSPORT_MERGEABLE_PATHS:
-            value = get_path(transport, path, None)
-            # Don't merge empty values
-            if value:
-                self.__transport.merge(path, value)
+        try:
+            transport, result = runtime_call(
+                address,
+                self.__runtime_transport,
+                self.get_action_name(),
+                [service, version, action],
+                **kwargs
+                )
+        except Exception as e:
+            exc = e
+
+        if transport:
+            # Clear default to succesfully merge dictionaries. Without
+            # this merge would be done with a default value that is not
+            # part of the payload.
+            self.__transport.set_defaults({})
+
+            for path in TRANSPORT_MERGEABLE_PATHS:
+                value = get_path(transport, path, None)
+                # Don't merge empty values
+                if value:
+                    self.__transport.merge(path, value)
+
+        if exc:
+            raise exc
 
         return result
 
