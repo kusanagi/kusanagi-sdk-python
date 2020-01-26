@@ -5,7 +5,7 @@
 #
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
-from ..errors import KusanagiError
+from ..errors import KusanagiTypeError
 from ..payload import get_path
 from ..payload import Payload
 
@@ -31,10 +31,6 @@ TYPE_CLASSES = {
     TYPE_STRING: str,
     TYPE_BINARY: bytes,
     }
-
-
-class InvalidFallback(KusanagiError):
-    pass
 
 
 def payload_to_param(payload):
@@ -89,7 +85,7 @@ class Param(object):
         :param type: Optional type for the parameter value.
         :param exists: Optional flag to know if the parameter exists in the service call.
 
-        :raises: TypeError
+        :raises: KusanagiTypeError
 
         """
 
@@ -99,11 +95,11 @@ class Param(object):
 
         # Check that the value respects the parameter type
         if type == TYPE_NULL and value is not None:
-            raise TypeError('Value must be null')
+            raise KusanagiTypeError('Value must be null')
         else:
             type_cls = TYPE_CLASSES[type]
             if not isinstance(type_cls, value):
-                raise TypeError(f'Value must be {type}')
+                raise KusanagiTypeError(f'Value must be {type}')
 
         self.__name = name
         self.__value = value
@@ -160,29 +156,34 @@ class Param(object):
 
         Value is returned using the parameter data type for casting.
 
-        :param fallback: The optional fallback value, which must be null or conform to the data type. If a callable is 
-        provided it will be evaluated if the fallback is to be returned.
+        The optional fallback value must be null or conform to the data type.
+        If a callable is provided it will be evaluated if the fallback is to be returned.
+
+        :param fallback: The optional fallback value.
         :type fallback: mixed
-        :returns: The parameter value.
-        :rtype: object
-        :raises: InvalidFallback
+
+        :raises: KusanagiTypeError
+
+        :rtype: mixed
 
         """
 
+        # When the parameter doesn't exists in a call try to get a default value
         if not self.__exists:
+            # Return None by default when the param type is null and it doesn't exists
             if self.__type == TYPE_NULL:
                 return
 
+            # When a fallback value is given evaluate it and use it as parameter value
             if fallback is not None:
-                if callable(fallback):
-                    fallback = fallback()
-
                 name = self.__name
 
-                if not isinstance(fallback, TYPE_CLASSES[self.__type]):
-                    raise InvalidFallback(f'Invalid data type for fallback of parameter: {name}')
+                # Fallback can be a callable, if so get its value
+                value = fallback() if callable(fallback) else fallback
+                if not isinstance(value, TYPE_CLASSES[self.__type]):
+                    raise KusanagiTypeError(f'Invalid data type for fallback of parameter: {name}')
 
-                return fallback
+                return value
 
         return self.__value
 

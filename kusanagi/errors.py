@@ -6,6 +6,7 @@
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
 
+
 class KusanagiError(Exception):
     """Base exception for KUSANAGI errors."""
 
@@ -19,3 +20,7 @@ class KusanagiError(Exception):
 
     def __str__(self):
         return self.message or self.__class__.__name__
+
+
+class KusanagiTypeError(KusanagiError):
+    """Kusanagi type error."""
