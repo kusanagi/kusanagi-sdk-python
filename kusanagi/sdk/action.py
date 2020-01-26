@@ -59,6 +59,8 @@ CONTEXT.linger = 0
 
 RUNTIME_CALL = b'\x01'
 
+EXECUTION_TIMEOUT = 30000  # ms
+
 
 class RuntimeCallError(ApiError):
     """Error raised when when run-time call fails."""
@@ -192,7 +194,7 @@ def runtime_call(address, transport, action, callee, **kwargs):
 
     command = CommandPayload.new('runtime-call', 'service', args=args)
 
-    timeout = kwargs.get('timeout') or 30000
+    timeout = kwargs.get('timeout') or EXECUTION_TIMEOUT
     channel = ipc(address)
     socket = CONTEXT.socket(zmq.REQ)
 

@@ -8,9 +8,9 @@
 from .error import ServiceSchemaError
 from .param import ParamSchema
 from .file import FileSchema
-from ... payload import get_path
-from ... payload import path_exists
-from ... payload import Payload
+from ...payload import get_path
+from ...payload import path_exists
+from ...payload import Payload
 
 
 def entity_from_payload(entity_payload, entity=None):
@@ -95,6 +95,15 @@ class ActionSchema(object):
         self.__params = self.__payload.get('params', {})
         self.__files = self.__payload.get('files', {})
         self.__tags = self.__payload.get('tags', [])
+
+    def get_timeout(self):
+        """Get the maximum execution time defined in milliseconds for the action.
+
+        :rtype: int
+
+        """
+
+        return self.__payload.get('timeout', 30000)
 
     def is_deprecated(self):
         """Check if action has been deprecated.
