@@ -23,7 +23,6 @@ class HttpResponse(object):
 
         # Set response headers
         headers = kwargs.get('headers')
-
         if headers:
             # Headers should be a list of tuples
             if isinstance(headers, dict):
@@ -232,30 +231,33 @@ class HttpResponse(object):
         :param overwrite: Determines if an existing header should be overwritten.
         :type overwrite: bool
 
-        :rtype: HttpResponse
+        :rtype: `HttpResponse`
 
         """
 
-        upper_name = name.upper()
+        # Check if a header name (in uppercase) exists in the list of header names
+        # NOTE: Uppercase is used to be able to support different name casing for the same header
+        uppercase_name = name.upper()
+        header_exists = uppercase_name in self.__header_names
+        if header_exists:
+            # Get the previous name used to set the header value
+            header_name = self.__header_names[uppercase_name]
 
-        if upper_name in self.__header_names and name not in self.__headers:
-            orig_name = self.__header_names[upper_name]
+            if overwrite:
+                # Delete previous header values when overwite is true
+                del self.__headers[header_name]
+            elif name != header_name:
+                # Move current header values to a hader with the same name but different casing
+                for value in self.__headers[header_name]:
+                    self.__headers[name] = value
 
-            # TODO value should be appended last (dict does not exist)
-            self.__headers[name] = value
+                # Remove the existing header name leaving the values in the new header name
+                del self.__headers[header_name]
 
-            if not overwrite:
-                self.__headers[name].extend(self.__headers[orig_name])
-
-            del self.__headers[orig_name]
-
-            self.__header_names[upper_name] = name
-        else:
-            if overwrite and name in self.__headers:
-                del self.__headers[name]
-
-            self.__headers[name] = value
-            self.__header_names[name.upper()] = name
+        # Add the header value to the headers
+        self.__headers[name] = value
+        # Save the last name used to change the header
+        self.__header_names[uppercase_name] = name
 
         return self
 
