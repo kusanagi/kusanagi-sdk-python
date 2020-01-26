@@ -81,13 +81,21 @@ class HttpRequest(object):
     def get_url_host(self):
         """Get request URL host.
 
-        When a port is given in the URL it will be added to host.
-
         :rtype: str
 
         """
 
-        return self.__parsed_url.netloc
+        # The port number is ignored when present
+        return self.__parsed_url.netloc.split(':')[0]
+
+    def get_url_port(self):
+        """Get request URL port.
+
+        :rtype: int
+
+        """
+
+        return self.__parsed_url.port or 0
 
     def get_url_path(self):
         """Get request URL path.
