@@ -6,6 +6,7 @@
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
 from .. import urn
+from ..errors import KusanagiTypeError
 from ..logging import RequestLogger
 from ..payload import get_path
 from ..payload import Payload
@@ -231,14 +232,14 @@ class Request(Api):
         :param type: The data type of the value.
         :type type: str
 
-        :raises: TypeError
+        :raises: KusanagiTypeError
 
         :rtype: Param
 
         """
 
         if type and Param.resolve_type(value) != type:
-            raise TypeError('Incorrect data type given for parameter value')
+            raise KusanagiTypeError('Incorrect data type given for parameter value')
         else:
             type = Param.resolve_type(value)
 

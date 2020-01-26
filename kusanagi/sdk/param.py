@@ -20,6 +20,16 @@ TYPE_ARRAY = 'array'
 TYPE_OBJECT = 'object'
 TYPE_STRING = 'string'
 TYPE_BINARY = 'binary'
+TYPE_CHOICES = (
+    TYPE_NULL,
+    TYPE_BOOLEAN,
+    TYPE_INTEGER,
+    TYPE_FLOAT,
+    TYPE_ARRAY,
+    TYPE_OBJECT,
+    TYPE_STRING,
+    TYPE_BINARY,
+    )
 
 # Parameter type names to python types
 TYPE_CLASSES = {
@@ -76,7 +86,17 @@ class Param(object):
 
     """
 
-    def __init__(self, name, value='', type=TYPE_STRING, exists=True):
+    TYPE_NULL = TYPE_NULL
+    TYPE_BOOLEAN = TYPE_BOOLEAN
+    TYPE_INTEGER = TYPE_INTEGER
+    TYPE_FLOAT = TYPE_FLOAT
+    TYPE_ARRAY = TYPE_ARRAY
+    TYPE_OBJECT = TYPE_OBJECT
+    TYPE_STRING = TYPE_STRING
+    TYPE_BINARY = TYPE_BINARY
+    TYPE_CHOICES = TYPE_CHOICES
+
+    def __init__(self, name, value='', type=TYPE_STRING, exists=False):
         """
         Constructor.
 
@@ -90,15 +110,17 @@ class Param(object):
         """
 
         # Invalid parameter types are treated as string parameters
-        if type not in TYPE_CLASSES:
+        if type not in TYPE_CHOICES:
             type = TYPE_STRING
 
         # Check that the value respects the parameter type
-        if type == TYPE_NULL and value is not None:
-            raise KusanagiTypeError('Value must be null')
+        if type == TYPE_NULL:
+            # When the type is null check that its value is None
+            if value is not None:
+                raise KusanagiTypeError('Value must be null')
         else:
             type_cls = TYPE_CLASSES[type]
-            if not isinstance(type_cls, value):
+            if not isinstance(value, type_cls):
                 raise KusanagiTypeError(f'Value must be {type}')
 
         self.__name = name

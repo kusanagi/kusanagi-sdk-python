@@ -40,7 +40,11 @@ def test_sdk_parse_params():
         assert parse_params([123])
 
     # Check that parameters are converted to payload
-    assert parse_params([Param('foo', value=1), Param('bar', value=2)]) == [
+    parsed = parse_params([
+        Param('foo', value=1, type=Param.TYPE_INTEGER),
+        Param('bar', value=2, type=Param.TYPE_INTEGER),
+        ])
+    assert parsed == [
         {PARAM['name']: 'foo', PARAM['value']: 1, PARAM['type']: TYPE_INTEGER},
         {PARAM['name']: 'bar', PARAM['value']: 2, PARAM['type']: TYPE_INTEGER},
         ]
@@ -425,7 +429,7 @@ def test_sdk_action_transactions(read_json, registry):
     service_name = 'foo'
     service_version = '1.0'
     service_action = 'foo'
-    params = [Param('dummy', value=123)]
+    params = [Param('dummy', value=123, type=Param.TYPE_INTEGER)]
     action = Action(**{
         'action': service_action,
         'params': [],
@@ -555,7 +559,7 @@ def test_sdk_action_defer_call(read_json, registry):
     assert not transport.path_exists('calls')
 
     # Prepare call arguments
-    params = [Param('dummy', value=123)]
+    params = [Param('dummy', value=123, type=Param.TYPE_INTEGER)]
     c_name = 'foo'
     c_version = '1.1'
     c_action = 'bar'
@@ -663,7 +667,7 @@ def test_sdk_action_call_remote(read_json, registry):
     assert not transport.path_exists('calls')
 
     # Prepare call arguments
-    params = [Param('dummy', value=123)]
+    params = [Param('dummy', value=123, type=Param.TYPE_INTEGER)]
     c_addr = '87.65.43.21:4321'
     c_name = 'foo'
     c_version = '1.1'

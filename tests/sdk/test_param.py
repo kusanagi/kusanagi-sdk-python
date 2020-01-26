@@ -1,3 +1,5 @@
+import pytest
+from kusanagi.errors import KusanagiTypeError
 from kusanagi.sdk.param import Param
 from kusanagi.sdk.param import param_to_payload
 from kusanagi.sdk.param import payload_to_param
@@ -54,11 +56,11 @@ def test_sdk_param():
     assert not param.exists()
 
     # Create a parameter with an unknown type
-    param = Param('foo', value=42, type='weird')
+    param = Param('foo', value='42', type='weird')
     assert param.get_type() == TYPE_STRING
 
     # Check param creation
-    param = Param('foo', value=42, exists=True)
+    param = Param('foo', value=42, exists=True, type=Param.TYPE_INTEGER)
     assert param.get_name() == 'foo'
     assert param.get_value() == 42
     assert param.get_type() == TYPE_INTEGER
@@ -88,7 +90,7 @@ def test_sdk_param_resolve_type():
 
 
 def test_sdk_param_copy():
-    param = Param('foo', value=42)
+    param = Param('foo', value=42, type=Param.TYPE_INTEGER)
 
     # Check copy with methods
     clon = param.copy_with_name('clon')
@@ -107,10 +109,5 @@ def test_sdk_param_copy():
     assert clon.get_name() == param.get_name()
     assert clon.get_type() == param.get_type()
 
-    clon = param.copy_with_type(TYPE_STRING)
-    assert isinstance(clon, Param)
-    assert clon != param
-    assert clon.get_type() == TYPE_STRING
-    assert clon.get_type() != param.get_type()
-    assert clon.get_value() == param.get_value()
-    assert clon.get_name() == param.get_name()
+    with pytest.raises(KusanagiTypeError):
+        param.copy_with_type(TYPE_STRING)

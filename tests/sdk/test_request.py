@@ -1,10 +1,9 @@
 import pytest
 
 from kusanagi import urn
+from kusanagi.errors import KusanagiTypeError
 from kusanagi.sdk.http.request import HttpRequest
 from kusanagi.sdk.param import Param
-from kusanagi.sdk.param import TYPE_INTEGER
-from kusanagi.sdk.param import TYPE_NULL
 from kusanagi.sdk.request import Request
 from kusanagi.sdk.response import Response
 from kusanagi.sdk.transport import Transport
@@ -53,7 +52,7 @@ def test_sdk_request():
     assert isinstance(param, Param)
     assert not param.exists()
 
-    param = Param('foo', value=42)
+    param = Param('foo', value=42, type=Param.TYPE_INTEGER)
     assert request.set_param(param) == request
     assert request.has_param('foo')
 
@@ -150,19 +149,19 @@ def test_sdk_request_new_param():
     assert param.get_name() == 'foo'
     assert param.exists()
     assert param.get_value() is None
-    assert param.get_type() == TYPE_NULL
+    assert param.get_type() == Param.TYPE_NULL
 
     # Create a parameter with type and value
-    param = request.new_param('foo', value=42, type=TYPE_INTEGER)
+    param = request.new_param('foo', value=42, type=Param.TYPE_INTEGER)
     assert isinstance(param, Param)
     assert param.get_name() == 'foo'
     assert param.exists()
     assert param.get_value() == 42
-    assert param.get_type() == TYPE_INTEGER
+    assert param.get_type() == Param.TYPE_INTEGER
 
     # Check error when a parameter has inconsisten type and value
-    with pytest.raises(TypeError):
-        request.new_param('foo', value=True, type=TYPE_INTEGER)
+    with pytest.raises(KusanagiTypeError):
+        request.new_param('foo', value=True, type=Param.TYPE_INTEGER)
 
 
 def test_request_log(mocker, logs):
