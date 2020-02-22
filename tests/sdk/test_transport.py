@@ -14,6 +14,7 @@ def test_sdk_transport(read_json):
     assert transport.get_request_id() == 'f1b27da9-240b-40e3-99dd-a567e4498ed7'
     assert transport.get_request_timestamp() == '2016-04-12T02:49:05.761'
     assert transport.get_origin_service() == ('users', '1.0.0', 'list')
+    assert transport.get_origin_duration() == 42
 
     # Default value must be a string
     with pytest.raises(TypeError):
@@ -110,6 +111,10 @@ def test_sdk_transport_relations(read_json):
     fks = relation.get_foreign_relations()
     assert isinstance(fks, list)
     assert len(fks) == 2
+    fk = fks[0]
+    assert fk.get_type() == 'one'
+    assert fk.get_foreign_keys() == ['1']
+
     relation = relations[2]
     assert relation.get_address() == 'http://127.0.0.1:80'
     assert relation.get_name() == 'users'

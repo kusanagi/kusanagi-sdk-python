@@ -12,6 +12,7 @@ def test_sdk_schema_action_defaults():
     action = ActionSchema('foo', {})
 
     assert action.get_name() == 'foo'
+    assert action.get_timeout() == 30000
     assert not action.is_deprecated()
     assert not action.is_collection()
     assert action.get_entity_path() == ''
@@ -68,6 +69,7 @@ def test_sdk_schema_action(read_json):
     action = ActionSchema('foo', payload)
 
     assert action.get_name() == 'foo'
+    assert action.get_timeout() == 2000
     assert action.is_deprecated()
     assert action.is_collection()
     assert action.get_entity_path() == payload.get('entity_path')

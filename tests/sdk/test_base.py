@@ -142,3 +142,18 @@ def test_sdk_base_log(mocker, logs):
     out = logs.getvalue()
     # There should be no ouput at all
     assert len(out) == 0
+
+
+def test_sdk_base_done():
+    SchemaRegistry()
+
+    values = {
+        'component': None,
+        'path': '/path/to/file.py',
+        'name': 'dummy',
+        'version': '1.0',
+        'framework_version': '1.0.0',
+        }
+    api = base.Api(**values)
+    with pytest.raises(base.ApiError):
+        api.done()

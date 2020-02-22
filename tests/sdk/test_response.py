@@ -1,4 +1,7 @@
+import pytest
+
 from kusanagi import urn
+from kusanagi.sdk.response import NoReturnValueDefined
 from kusanagi.sdk.response import Response
 from kusanagi.sdk.transport import Transport
 from kusanagi.sdk.http.request import HttpRequest
@@ -11,7 +14,7 @@ def test_sdk_response():
 
     values = {
         'attributes': {},
-        'transport': Transport({}),
+        'transport': Transport({'meta': {'origin': ['foo', '1.0.0', 'bar']}}),
         'component': object(),
         'path': '/path/to/file.py',
         'name': 'dummy',
@@ -28,6 +31,9 @@ def test_sdk_response():
     # By default no HTTP request or response are created
     assert response.get_http_request() is None
     assert response.get_http_response() is None
+    # No return value is defined
+    with pytest.raises(NoReturnValueDefined):
+        response.get_return()
 
     # Create a new response with HTTP request and response data
     values['http_request'] = {
@@ -41,6 +47,17 @@ def test_sdk_response():
     response = Response(**values)
     assert isinstance(response.get_http_request(), HttpRequest)
     assert isinstance(response.get_http_response(), HttpResponse)
+
+    values['return_value'] = 42
+    response = Response(**values)
+    assert response.get_return() == 42
+
+    # Remove the origin to cover a specific get return case
+    del values['return_value']
+    values['transport'] = Transport({})
+    response = Response(**values)
+    assert response.get_return() is None
+
 
 
 def test_response_log(mocker, logs):
