@@ -96,7 +96,7 @@ class Param(object):
     TYPE_BINARY = TYPE_BINARY
     TYPE_CHOICES = TYPE_CHOICES
 
-    def __init__(self, name, value='', type=TYPE_STRING, exists=False):
+    def __init__(self, name, value='', type=None, exists=False):
         """
         Constructor.
 
@@ -110,7 +110,9 @@ class Param(object):
         """
 
         # Invalid parameter types are treated as string parameters
-        if type not in TYPE_CHOICES:
+        if type is None:
+            type = self.resolve_type(value)
+        elif type not in TYPE_CHOICES:
             type = TYPE_STRING
 
         # Check that the value respects the parameter type
@@ -153,7 +155,7 @@ class Param(object):
             if value_class == cls:
                 return type_name
 
-        return TYPE_OBJECT
+        return TYPE_STRING
 
     def get_name(self):
         """Get aprameter name.

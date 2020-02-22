@@ -82,7 +82,7 @@ def test_sdk_param_resolve_type():
         ('', TYPE_STRING),
         (b'', TYPE_BINARY),
         ({}, TYPE_OBJECT),
-        (Foo(), TYPE_OBJECT),
+        (Foo(), TYPE_STRING),
         )
 
     for value, type_ in cases:
