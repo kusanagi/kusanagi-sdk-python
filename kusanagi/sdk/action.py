@@ -195,6 +195,7 @@ def runtime_call(address, transport, action, callee, **kwargs):
     command = CommandPayload.new('runtime-call', 'service', args=args)
 
     timeout = kwargs.get('timeout') or EXECUTION_TIMEOUT
+    # TODO: See how to check for TCP when enabled
     channel = ipc(address)
     socket = CONTEXT.socket(zmq.REQ)
 
@@ -910,7 +911,6 @@ class Action(Api):
 
         # Check that files are supported by the service if local files are used
         files = kwargs.get('files')
-
         if files:
             for file in files:
                 if not file.is_local():
@@ -925,7 +925,6 @@ class Action(Api):
 
         transport = None
         exc = None
-
         try:
             transport, result = runtime_call(
                 address,
@@ -948,6 +947,26 @@ class Action(Api):
                 # Don't merge empty values
                 if value:
                     self.__transport.merge(path, value)
+
+        # Add the call to the transport
+        payload = Payload().set_many({
+            'name': service,
+            'version': version,
+            'action': action,
+            'caller': self.get_action_name(),
+            'timeout': kwargs.get('timeout') or 1000,
+            })
+
+        if 'params' in kwargs:
+            payload.set('params', [param_to_payload(param) for param in kwargs['params']])
+
+        if 'files' in kwargs:
+            payload.set('files', [file_to_payload(file) for file in kwargs['files']])
+
+        self.__transport.push(
+            'calls/{}/{}'.format(nomap(self.get_name()), self.get_version()),
+            payload
+            )
 
         if exc:
             raise exc
