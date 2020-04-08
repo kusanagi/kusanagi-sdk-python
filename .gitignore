@@ -9,6 +9,7 @@ venv/
 *.egg
 .cache/
 .pytest_cache/
+build/
 docs/build/
 
 Pipfile
