@@ -5,618 +5,303 @@
 #
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
+from __future__ import annotations
+
 import copy
-import logging
-
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-import zmq
-
-from ..logging import RequestLogger
-from ..payload import CommandPayload
-from ..payload import ErrorPayload
-from ..payload import get_path
-from ..payload import Payload
-from ..payload import TRANSPORT_MERGEABLE_PATHS
-from ..utils import ipc
-from ..utils import nomap
-from ..serialization import pack
-from ..serialization import unpack
-
-from .base import Api
-from .base import ApiError
+from .api import Api
 from .file import File
-from .file import file_to_payload
-from .file import payload_to_file
+from .file import FileSchema
+from .file import validate_file_list
+from .lib import datatypes
+from .lib.call import Client
+from .lib.error import KusanagiError
+from .lib.payload import ns
+from .lib.payload.error import ErrorPayload
+from .lib.payload.transport import TransportPayload
+from .lib.payload.utils import payload_to_file
+from .lib.payload.utils import payload_to_param
+from .lib.version import VersionString
 from .param import Param
-from .param import param_to_payload
+from .param import ParamSchema
+from .param import validate_parameter_list
 
-LOG = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import List
 
-# Default return values by type name
-DEFAULT_RETURN_VALUES = {
-    'boolean': False,
-    'integer': 0,
-    'float': 0.0,
-    'string': '',
-    'binary': '',
-    'array': [],
-    'object': {},
-    }
+    from .lib.payload.action import ActionSchemaPayload
+    from .lib.payload.action import HttpActionSchemaPayload
 
+
+# Default action execution timeout in milliseconds
+EXECUTION_TIMEOUT = 30000
+
+# Valid types for the action return values
 RETURN_TYPES = {
-    'boolean': (bool, ),
-    'integer': (int, ),
-    'float': (float, Decimal),
-    'string': (str, ),
-    'binary': (str, ),
-    'array': (list, ),
-    'object': (dict, ),
-    }
+    datatypes.TYPE_NULL: (type(None), ),
+    datatypes.TYPE_BOOLEAN: (bool, ),
+    datatypes.TYPE_INTEGER: (int, ),
+    datatypes.TYPE_FLOAT: (float, Decimal),
+    datatypes.TYPE_STRING: (str, ),
+    datatypes.TYPE_BINARY: (str, ),
+    datatypes.TYPE_ARRAY: (list, ),
+    datatypes.TYPE_OBJECT: (dict, ),
+}
 
-CONTEXT = zmq.Context.instance()
-CONTEXT.linger = 0
-
-RUNTIME_CALL = b'\x01'
-
-EXECUTION_TIMEOUT = 30000  # ms
-
-
-class RuntimeCallError(ApiError):
-    """Error raised when when run-time call fails."""
-
-    message = 'Run-time call failed: {}'
-
-    def __init__(self, message):
-        super().__init__(self.message.format(message))
-
-
-class NoFileServerError(ApiError):
-    """Error raised when file server is not configured."""
-
-    message = 'File server not configured: "{service}" ({version})'
-
-    def __init__(self, service, version):
-        self.service = service
-        self.version = version
-        super().__init__(self.message.format(service=service, version=version))
-
-
-class ActionError(ApiError):
-    """Base error class for API Action errors."""
-
-    def __init__(self, service, version, action, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.service = service
-        self.version = version
-        self.action = action
-        self.service_string = '"{}" ({})'.format(service, version)
-
-
-class UndefinedReturnValueError(ActionError):
-    """Error raised when no return value is defined for an action."""
-
-    message = 'Cannot set a return value in {service} for action: "{action}"'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.message = self.message.format(
-            service=self.service_string,
-            action=self.action,
-            )
-
-
-class ReturnTypeError(ActionError):
-    """Error raised when return value type is invalid for an action."""
-
-    message = 'Invalid return type given in {service} for action: "{action}"'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.message = self.message.format(
-            service=self.service_string,
-            action=self.action,
-            )
-
-
-def parse_params(params):
-    """Parse a list of parameters to be used in payloads.
-
-    Each parameter is converted to a `Payload`.
-
-    :param params: List of `Param` instances.
-    :type params: list
-
-    :returns: A list of `Payload`.
-    :rtype: list
-
-    """
-
-    result = []
-    if not params:
-        return result
-
-    if not isinstance(params, list):
-        raise TypeError('Parameters must be a list')
-
-    for param in params:
-        if not isinstance(param, Param):
-            raise TypeError('Parameter must be an instance of Param class')
-        else:
-            result.append(Payload().set_many({
-                'name': param.get_name(),
-                'value': param.get_value(),
-                'type': param.get_type(),
-                }))
-
-    return result
-
-
-def runtime_call(address, transport, action, callee, **kwargs):
-    """Make a Service run-time call.
-
-    :param address: Caller Service address.
-    :type address: str
-    :param transport: Current transport payload
-    :type transport: TransportPayload
-    :param action: The caller action name.
-    :type action: str
-    :param callee: The callee Service name, version and action name.
-    :type callee: list
-    :param params: Optative list of Param objects.
-    :type params: list
-    :param files: Optative list of File objects.
-    :type files: list
-    :param timeout: Optative timeout in milliseconds.
-    :type timeout: int
-
-    :raises: ApiError
-    :raises: RuntimeCallError
-
-    :returns: The transport and the return value for the call.
-    :rtype: tuple
-
-    """
-
-    args = Payload().set_many({
-        'action': action,
-        'callee': callee,
-        'transport': transport,
-        })
-
-    params = kwargs.get('params')
-    if params:
-        args.set('params', [param_to_payload(param) for param in params])
-
-    files = kwargs.get('files')
-    if files:
-        args.set('files', [file_to_payload(file) for file in files])
-
-    command = CommandPayload.new('runtime-call', 'service', args=args)
-
-    timeout = kwargs.get('timeout') or EXECUTION_TIMEOUT
-    # TODO: See how to check for TCP when enabled
-    channel = ipc(address)
-    socket = CONTEXT.socket(zmq.REQ)
-
-    try:
-        socket.connect(channel)
-        socket.send_multipart([RUNTIME_CALL, pack(command)], zmq.NOBLOCK)
-        poller = zmq.Poller()
-        poller.register(socket, zmq.POLLIN)
-        event = dict(poller.poll(timeout))
-
-        if event.get(socket) == zmq.POLLIN:
-            stream = socket.recv()
-        else:
-            stream = None
-    except zmq.error.ZMQError as err:
-        LOG.exception('Run-time call to address failed: %s', address)
-        raise RuntimeCallError('Connection failed')
-    finally:
-        if not socket.closed:
-            socket.disconnect(channel)
-            socket.close()
-
-    if not stream:
-        raise RuntimeCallError('Timeout')
-
-    try:
-        payload = Payload(unpack(stream))
-    except (TypeError, ValueError):
-        raise RuntimeCallError('Communication failed')
-
-    if payload.path_exists('error'):
-        raise ApiError(payload.get('error/message'))
-    elif payload.path_exists('command_reply/result/error'):
-        raise ApiError(payload.get('command_reply/result/error/message'))
-
-    result = payload.get('command_reply/result')
-
-    return (get_path(result, 'transport'), get_path(result, 'return'))
+# Default return values
+DEFAULT_RETURN_VALUES = {
+    datatypes.TYPE_NULL: None,
+    datatypes.TYPE_BOOLEAN: False,
+    datatypes.TYPE_INTEGER: 0,
+    datatypes.TYPE_FLOAT: 0.0,
+    datatypes.TYPE_STRING: '',
+    datatypes.TYPE_BINARY: '',
+    datatypes.TYPE_ARRAY: [],
+    datatypes.TYPE_OBJECT: {},
+}
 
 
 class Action(Api):
-    """Action API class for Service component."""
+    """Action API class for service component."""
 
-    def __init__(self, action, params, transport, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        """Constructor."""
+
         super().__init__(*args, **kwargs)
-        self.__action = action
-        self.__transport = transport
-        self.__gateway = transport.get('meta/gateway')
-        self.__params = {
-            get_path(param, 'name'): Payload(param)
-            for param in params
-            }
+        # Copy the command transport without keeping references to avoid changing
+        # the transport data in the command when the action changes the transport.
+        # This leaves a "vanilla" transport inside the command, to be used as base
+        # transport for the runtime calls.
+        payload = copy.deepcopy(self._command.get([ns.TRANSPORT], {}))
+        self._transport = TransportPayload(payload)
+        self._transport.set_reply(self._reply)
 
-        rid = transport.get('meta/id')
-        self._logger = RequestLogger(rid, 'kusanagi.sdk')
+        # Index the files for the current action by name
+        gateway = self._transport.get([ns.META, ns.GATEWAY], ['', ''])[1]
+        path = [ns.FILES, gateway, self.get_name(), self.get_version(), self.get_action_name()]
+        self.__files = {file[ns.NAME]: file for file in self._transport.get(path, [])}
 
-        service = self.get_name()
-        version = self.get_version()
-        action_name = self.get_action_name()
+        # Index parameters by name
+        self.__params = {param[ns.NAME]: param for param in self._command.get([ns.PARAMS], [])}
 
-        # Get files for current service, version and action and save
-        # them in a dictionary where the keys are the file parameter
-        # name and the value the file payload.
-        path = 'files|{}|{}|{}|{}'.format(
-            self.__gateway[1],
-            nomap(service),
-            version,
-            nomap(action_name),
-            )
-        self.__files = {}
-        for file in transport.get(path, default=[], delimiter='|'):
-            name = get_path(file, 'name', None)
-            if not name:
-                continue
+        # Set a default return value for the action when there are schemas
+        if self._schemas:
+            try:
+                schema = self.get_service_schema(self.get_name(), self.get_version())
+                action_schema = schema.get_action_schema(self.get_action_name())
+                if action_schema.has_return():
+                    return_type = action_schema.get_return_type()
+                    self._transport.set_return(DEFAULT_RETURN_VALUES[return_type])
+            except Exception:  # pragma: no cover
+                pass
 
-            self.__files[name] = file
+    def is_origin(self) -> bool:
+        """Check if the current service is the origin of the request."""
 
-        # Get schema for current action
-        try:
-            self.__schema = self.get_service_schema(service, version)
-            self.__action_schema = self.__schema.get_action_schema(action_name)
-        except ApiError:
-            # When schema for current service can't be resolved it means action
-            # is run from CLI and because of that there are no mappings to
-            # resolve schemas.
-            self.__schema = None
-            self.__action_schema = None
+        origin = [self.get_name(), self.get_version(), self.get_action_name()]
+        return self._reply.get([ns.TRANSPORT, ns.META, ns.ORIGIN]) == origin
 
-        # Init return value with a default when action supports it
-        self.__return_value = kwargs.get('return_value', Payload())
-        if not self.__action_schema:
-            self.__return_value.set('return', None)
-        elif self.__action_schema.has_return():
-            # When return value is supported set a default value by type
-            rtype = self.__action_schema.get_return_type()
-            self.__return_value.set('return', DEFAULT_RETURN_VALUES.get(rtype))
+    def get_action_name(self) -> str:
+        """Get the name of the action."""
 
-        # Make a transport clone to be used for runtime calls.
-        # This is required to avoid merging back values that are
-        # already inside current transport.
-        self.__runtime_transport = copy.deepcopy(self.__transport)
+        return self._state.action
 
-    def __files_to_payload(self, files):
-        if self.__schema:
-            has_file_server = self.__schema.has_file_server()
-        else:
-            # When schema for current service can't be resolved it means action
-            # is run from CLI and because of that there are no mappings to
-            # resolve schemas. For this case is valid to set has_file_server
-            # to true.
-            has_file_server = True
-
-        files_list = []
-        for file in files:
-            if file.is_local() and not has_file_server:
-                raise NoFileServerError(self.get_name(), self.get_version())
-
-            files_list.append(file_to_payload(file))
-
-        return files_list
-
-    def is_origin(self):
-        """Determines if the current service is the origin of the request.
-
-        :rtype: bool
-
+    def set_property(self, name: str, value: str) -> Action:
         """
-
-        origin = self.__transport.get('meta/origin')
-        return (origin == [
-            self.get_name(),
-            self.get_version(),
-            self.get_action_name()
-            ])
-
-    def get_action_name(self):
-        """Get the name of the action.
-
-        :rtype: str
-
-        """
-
-        return self.__action
-
-    def set_property(self, name, value):
-        """Sets a user land property.
-
-        Sets a userland property in the transport with the given
-        name and value.
+        Set a userland property in the transport with the given name and value.
 
         :param name: The property name.
-        :type name: str
         :param value: The property value.
-        :type value: str
 
         :raises: TypeError
-
-        :rtype: Action
 
         """
 
         if not isinstance(value, str):
             raise TypeError('Value is not a string')
 
-        self.__transport.set(
-            'meta/properties/{}'.format(nomap(name)),
-            str(value),
-            )
+        self._reply.set([ns.TRANSPORT, ns.META, ns.PROPERTIES, name], value)
         return self
 
-    def has_param(self, name):
-        """Check if a parameter exists.
+    def has_param(self, name: str) -> bool:
+        """
+        Check if a parameter exists.
 
         :param name: The parameter name.
-        :type name: str
-
-        :rtype: bool
 
         """
 
-        return (name in self.__params)
+        return name in self.__params
 
-    def get_param(self, name):
-        """Get an action parameter.
+    def get_param(self, name: str) -> Param:
+        """
+        Get an action parameter.
 
         :param name: The parameter name.
-        :type name: str
-
-        :rtype: `Param`
 
         """
 
+        # TODO: Create the params from the service schema (see PHP SDK)
         if not self.has_param(name):
             return Param(name)
 
-        return Param(
-            name,
-            value=self.__params[name].get('value'),
-            type=self.__params[name].get('type'),
-            exists=True,
-            )
+        return payload_to_param(self.__params[name])
 
-    def get_params(self):
-        """Get all action parameters.
+    def get_params(self) -> List[Param]:
+        """Get all action parameters."""
 
-        :rtype: list
+        return [payload_to_param(payload) for payload in self.__params.values()]
 
+    def new_param(self, name: str, value: Any = '', type: str = '') -> Param:
         """
+        Create a new parameter object.
 
-        params = []
-        for payload in self.__params.values():
-            params.append(Param(
-                payload.get('name'),
-                value=payload.get('value'),
-                type=payload.get('type'),
-                exists=True,
-                ))
-
-        return params
-
-    def new_param(self, name, value=None, type=None):
-        """Creates a new parameter object.
-
-        Creates an instance of Param with the given name, and optionally
-        the value and data type. If the value is not provided then
-        an empty string is assumed. If the data type is not defined then
-        "string" is assumed.
-
-        Valid data types are "null", "boolean", "integer", "float", "string",
-        "array" and "object".
+        Creates an instance of Param with the given name, and optionally the value and data type.
+        When the value is not provided then an empty string is assumed.
+        If the data type is not defined then "string" is assumed.
 
         :param name: The parameter name.
-        :type name: str
         :param value: The parameter value.
-        :type value: mixed
         :param type: The data type of the value.
-        :type type: str
-
-        :raises: TypeError
-
-        :rtype: Param
 
         """
 
-        if type and Param.resolve_type(value) != type:
-            raise TypeError('Incorrect data type given for parameter value')
-        else:
-            type = Param.resolve_type(value)
+        return Param(name, value=value, type=type, exists=True)
 
-        return Param(name, value=value, type=type, exists=False)
-
-    def has_file(self, name):
-        """Check if a file was provided for the action.
+    def has_file(self, name: str) -> bool:
+        """
+        Check if a file was provided for the action.
 
         :param name: File name.
-        :type name: str
-
-        :rtype: bool
 
         """
 
         return name in self.__files
 
-    def get_file(self, name):
-        """Get a file with a given name.
+    def get_file(self, name: str) -> File:
+        """
+        Get a file with a given name.
 
         :param name: File name.
-        :type name: str
-
-        :rtype: `File`
 
         """
 
-        if self.has_file(name):
-            return payload_to_file(self.__files[name])
-        else:
-            return File(name, path='')
+        # TODO: Create the file from the service schema (see PHP SDK and change async too)
+        if not self.has_file(name):
+            return File(name)
 
-    def get_files(self):
-        """Get all action files.
+        return payload_to_file(self.__files[name])
 
-        :rtype: list
+    def get_files(self) -> List[File]:
+        """Get all action files."""
 
+        return [payload_to_file(payload) for payload in self.__files.values()]
+
+    def new_file(self, name: str, path: str, mime: str = '') -> File:
         """
-
-        files = []
-        for payload in self.__files.values():
-            files.append(payload_to_file(payload))
-
-        return files
-
-    def new_file(self, name, path, mime=None):
-        """Create a new file.
+        Create a new file.
 
         :param name: File name.
-        :type name: str
         :param path: File path.
-        :type path: str
         :param mime: Optional file mime type.
-        :type mime: str
-
-        :rtype: `File`
 
         """
 
         return File(name, path, mime=mime)
 
-    def set_download(self, file):
-        """Set a file as the download.
-
-        Sets a File object as the file to be downloaded via the Gateway.
+    def set_download(self, file: File) -> Action:
+        """
+        Set a file as the download.
 
         :param file: The file object.
-        :type file: `File`
 
-        :raises: TypeError
-        :raises: NoFileServerError
-
-        :rtype: Action
+        :raises: LookupError
 
         """
 
         if not isinstance(file, File):
             raise TypeError('File must be an instance of File class')
 
-        # Check that files server is enabled
-        service = self.get_name()
-        version = self.get_version()
-        path = '{}/{}'.format(service, version)
+        # Check that files server is enabled when the file is a local file
+        if file.is_local():
+            name = self.get_name()
+            version = self.get_version()
+            schema = self.get_service_schema(name, version)
+            if not schema.has_file_server():
+                raise LookupError(f'File server not configured: "{name}" ({version})')
 
-        # Check if there are mappings to validate.
-        # Note: When action is run from CLI mappings will be ampty.
-        if self._registry.has_mappings:
-            if not get_path(self._registry.get(path), 'files', False):
-                raise NoFileServerError(service, version)
-
-        self.__transport.set('body', file_to_payload(file))
+        self._transport.set_download(file)
         return self
 
-    def set_return(self, value):
-        """Sets the value to be returned as "return value".
+    def set_return(self, value: Any) -> Action:
+        """
+        Set the value to be returned by the action.
 
-        Supported value types: bool, int, float, str, list, dict and None.
+        :param value: A value to return.
 
-        :param value: A supported return value.
-        :type value: object
-
-        :raises: UndefinedReturnValueError
-        :raises: ReturnTypeError
-
-        :rtype: Action
+        :raises: KusanagiError
 
         """
 
-        service = self.get_name()
-        version = self.get_version()
-        action = self.get_action_name()
+        if self._schemas:
+            name = self.get_name()
+            version = self.get_version()
+            try:
+                # Check that the schema for the current action is available
+                schema = self.get_service_schema(name, version)
+                action = self.get_action_name()
+                action_schema = schema.get_action_schema(action)
+                if not action_schema.has_return():
+                    raise KusanagiError(f'Cannot set a return value in "{name}" ({version}) for action: "{action}"')
 
-        # When runnong from CLI allow any return values
-        if not self.__action_schema:
-            self.__return_value.set('return', value)
-            return self
+                # Validate that the return value has the type defined in the config
+                return_type = action_schema.get_return_type()
+                if not isinstance(value, RETURN_TYPES[return_type]):
+                    raise KusanagiError(f'Invalid return type given in "{name}" ({version}) for action: "{action}"')
+            except LookupError as err:
+                # LookupError is raised when the schema for the current service,
+                # or for the current action is not available.
+                raise KusanagiError(err)
+        else:  # pragma: no cover
+            # When running the action from the CLI there is no schema available, but the
+            # setting of return values must be allowed without restrictions in this case.
+            self._logger.warning('Return value set without discovery mapping available')
 
-        if not self.__action_schema.has_return():
-            raise UndefinedReturnValueError(service, version, action)
-
-        # Check that value type matches return type
-        if value is not None:
-            rtype = self.__action_schema.get_return_type()
-            if not isinstance(value, RETURN_TYPES[rtype]):
-                raise ReturnTypeError(service, version, action)
-
-        self.__return_value.set('return', value)
+        self._transport.set_return(value)
         return self
 
-    def set_entity(self, entity):
-        """Sets the entity data.
+    def set_entity(self, entity: dict) -> Action:
+        """
+        Set the entity data.
 
         Sets an object as the entity to be returned by the action.
 
-        Entity is validated when validation is enabled for an entity
-        in the Service config file.
+        Entity is validated when validation is enabled for an entity in the service config file.
 
         :param entity: The entity object.
-        :type entity: dict
 
         :raises: TypeError
-
-        :rtype: Action
 
         """
 
         if not isinstance(entity, dict):
-            raise TypeError('Entity must be an dict')
+            raise TypeError('Entity must be a dictionary')
 
-        self.__transport.push(
-            'data|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                self.get_version(),
-                nomap(self.get_action_name()),
-                ),
-            entity,
-            delimiter='|',
-            )
+        self._transport.add_data(self.get_name(), self.get_version(), self.get_action_name(), entity)
         return self
 
-    def set_collection(self, collection):
-        """Sets the collection data.
+    def set_collection(self, collection: List[dict]) -> Action:
+        """
+        Set the collection data.
 
-        Sets a list as the collection of entities to be returned by the action.
-
-        Collextion is validated when validation is enabled for an entity
-        in the Service config file.
+        Collection is validated when validation is enabled for an entity in the service config file.
 
         :param collection: The collection list.
-        :type collection: list
 
         :raises: TypeError
-
-        :rtype: Action
 
         """
 
@@ -625,489 +310,837 @@ class Action(Api):
 
         for entity in collection:
             if not isinstance(entity, dict):
-                raise TypeError('Entity must be an dict')
+                raise TypeError('Collection entities must be of type dict')
 
-        self.__transport.push(
-            'data|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                self.get_version(),
-                nomap(self.get_action_name()),
-                ),
-            collection,
-            delimiter='|',
-            )
+        self._transport.add_data(self.get_name(), self.get_version(), self.get_action_name(), collection)
         return self
 
-    def relate_one(self, primary_key, service, foreign_key):
-        """Creates a "one-to-one" relation between two entities.
+    def relate_one(self, primary_key: str, service: str, foreign_key: str) -> Action:
+        """
+        Create a "one-to-one" relation between two entities.
 
-        Creates a "one-to-one" relation between the entity with the given
-        primary key and service with the foreign key.
+        Creates a "one-to-one" relation between the entity's primary key and service with the foreign key.
 
         :param primery_key: The primary key.
-        :type primary_key: str, int
         :param service: The foreign service.
-        :type service: str
         :param foreign_key: The foreign key.
-        :type foreign_key: str, int
 
-        :rtype: Action
+        :raises: ValueError
 
         """
 
-        self.__transport.set(
-            'relations|{}|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                nomap(primary_key),
-                self.__gateway[1],
-                nomap(service),
-                ),
-            foreign_key,
-            delimiter='|',
-            )
+        if not primary_key:
+            raise ValueError('The primary key is empty')
+
+        if not service:
+            raise ValueError('The foreign service name is empty')
+
+        if not foreign_key:
+            raise ValueError('The foreign key is empty')
+
+        self._transport.add_relate_one(self.get_name(), primary_key, service, foreign_key)
         return self
 
-    def relate_many(self, primary_key, service, foreign_keys):
-        """Creates a "one-to-many" relation between entities.
+    def relate_many(self, primary_key: str, service: str, foreign_keys: List[str]) -> Action:
+        """
+        Create a "one-to-many" relation between entities.
 
-        Creates a "one-to-many" relation between the entity with the given
-        primary key and service with the foreign keys.
+        Creates a "one-to-many" relation between the entity's primary key and service with the foreign keys.
 
         :param primery_key: The primary key.
-        :type primary_key: str, int
         :param service: The foreign service.
-        :type service: str
         :param foreign_key: The foreign keys.
-        :type foreign_key: list
 
-        :raises: TypeError
-
-        :rtype: Action
+        :raises: TypeError, ValueError
 
         """
 
-        if not isinstance(foreign_keys, list):
+        if not primary_key:
+            raise ValueError('The primary key is empty')
+
+        if not service:
+            raise ValueError('The foreign service name is empty')
+
+        if not foreign_keys:
+            raise ValueError('The foreign keys are empty')
+        elif not isinstance(foreign_keys, list):
             raise TypeError('Foreign keys must be a list')
 
-        self.__transport.set(
-            'relations|{}|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                nomap(primary_key),
-                self.__gateway[1],
-                nomap(service),
-                ),
-            foreign_keys,
-            delimiter='|',
-            )
+        self._transport.add_relate_many(self.get_name(), primary_key, service, foreign_keys)
         return self
 
-    def relate_one_remote(self, primary_key, address, service, foreign_key):
-        """Creates a "one-to-one" relation between two entities.
+    def relate_one_remote(self, primary_key: str, address: str, service: str, foreign_key: str) -> Action:
+        """
+        Creates a "one-to-one" relation between two entities.
 
-        Creates a "one-to-one" relation between the entity with the given
-        primary key and service with the foreign key.
+        Creates a "one-to-one" relation between the entity's primary key and service with the foreign key.
 
         This type of relation is done between entities in different realms.
 
         :param primery_key: The primary key.
-        :type primary_key: str, int
         :param address: Foreign service public address.
-        :type address: str
         :param service: The foreign service.
-        :type service: str
         :param foreign_key: The foreign key.
-        :type foreign_key: str, int
 
-        :rtype: Action
-
-        """
-
-        self.__transport.set(
-            'relations|{}|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                nomap(primary_key),
-                address,
-                nomap(service),
-                ),
-            foreign_key,
-            delimiter='|',
-            )
-        return self
-
-    def relate_many_remote(self, primary_key, address, service, foreign_keys):
-        """Creates a "one-to-many" relation between entities.
-
-        Creates a "one-to-many" relation between the entity with the given
-        primary key and service with the foreign keys.
-
-        This type of relation is done between entities in different realms.
-
-        :param primery_key: The primary key.
-        :type primary_key: str, int
-        :param address: Foreign service public address.
-        :type address: str
-        :param service: The foreign service.
-        :type service: str
-        :param foreign_key: The foreign keys.
-        :type foreign_key: list
-
-        :raises: TypeError
-
-        :rtype: Action
+        :raises: ValueError
 
         """
 
-        if not isinstance(foreign_keys, list):
-            raise TypeError('Foreign keys must be a list')
-
-        self.__transport.set(
-            'relations|{}|{}|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                nomap(primary_key),
-                address,
-                nomap(service),
-                ),
-            foreign_keys,
-            delimiter='|',
-            )
-        return self
-
-    def set_link(self, link, uri):
-        """Sets a link for the given URI.
-
-        :param link: The link name.
-        :type link: str
-        :param uri: The link URI.
-        :type uri: str
-
-        :rtype: Action
-
-        """
-
-        self.__transport.set(
-            'links|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                nomap(link),
-                ),
-            uri,
-            delimiter='|',
-            )
-        return self
-
-    def commit(self, action, params=None):
-        """Register a transaction to be called when request succeeds.
-
-        :param action: The action name.
-        :type action: str
-        :param params: Optional list of Param objects.
-        :type params: list
-
-        :rtype: Action
-
-        """
-
-        payload = Payload().set_many({
-            'name': self.get_name(),
-            'version': self.get_version(),
-            'action': action,
-            'caller': self.get_action_name(),
-            })
-        if params:
-            payload.set('params', parse_params(params))
-
-        self.__transport.push('transactions/commit', payload)
-        return self
-
-    def rollback(self, action, params=None):
-        """Register a transaction to be called when request fails.
-
-        :param action: The action name.
-        :type action: str
-        :param params: Optional list of Param objects.
-        :type params: list
-
-        :rtype: Action
-
-        """
-
-        payload = Payload().set_many({
-            'name': self.get_name(),
-            'version': self.get_version(),
-            'action': action,
-            'caller': self.get_action_name(),
-            })
-        if params:
-            payload.set('params', parse_params(params))
-
-        self.__transport.push('transactions/rollback', payload)
-        return self
-
-    def complete(self, action, params=None):
-        """Register a transaction to be called when request finishes.
-
-        This transaction is ALWAYS executed, it doesn't matter if request
-        fails or succeeds.
-
-        :param action: The action name.
-        :type action: str
-        :param params: Optional list of Param objects.
-        :type params: list
-
-        :rtype: Action
-
-        """
-
-        payload = Payload().set_many({
-            'name': self.get_name(),
-            'version': self.get_version(),
-            'action': action,
-            'caller': self.get_action_name(),
-            })
-        if params:
-            payload.set('params', parse_params(params))
-
-        self.__transport.push('transactions/complete', payload)
-        return self
-
-    def call(self, service, version, action, **kwargs):
-        """Perform a run-time call to a service.
-
-        :param service: The service name.
-        :type service: str
-        :param version: The service version.
-        :type version: str
-        :param action: The action name.
-        :type action: str
-        :param params: Optative list of Param objects.
-        :type params: list
-        :param files: Optative list of File objects.
-        :type files: list
-        :param timeout: Optative timeout in milliseconds.
-        :type timeout: int
-
-        :raises: ApiError
-        :raises: RuntimeCallError
-
-        :rtype: Action
-
-        """
-
-        # Get address for current action's service
-        path = '/'.join([self.get_name(), self.get_version(), 'address'])
-        address = self._registry.get(path, None)
+        if not primary_key:
+            raise ValueError('The primary key is empty')
 
         if not address:
-            msg = 'Failed to get address for Service: "{}" ({})'.format(
-                self.get_name(),
-                self.get_version(),
-                )
-            raise ApiError(msg)
+            raise ValueError('The foreign service address is empty')
 
-        # Check that files are supported by the service if local files are used
-        files = kwargs.get('files')
+        if not service:
+            raise ValueError('The foreign service name is empty')
+
+        if not foreign_key:
+            raise ValueError('The foreign key is empty')
+
+        self._transport.add_relate_one_remote(self.get_name(), primary_key, address, service, foreign_key)
+        return self
+
+    def relate_many_remote(self, primary_key: str, address: str, service: str, foreign_keys: List[str]) -> Action:
+        """
+        Create a "one-to-many" relation between entities.
+
+        Creates a "one-to-many" relation between the entity's primary key and service with the foreign keys.
+
+        This type of relation is done between entities in different realms.
+
+        :param primery_key: The primary key.
+        :param address: Foreign service public address.
+        :param service: The foreign service.
+        :param foreign_key: The foreign keys.
+
+        :raises: ValueError, TypeError
+
+        """
+
+        if not primary_key:
+            raise ValueError('The primary key is empty')
+
+        if not address:
+            raise ValueError('The foreign service address is empty')
+
+        if not service:
+            raise ValueError('The foreign service name is empty')
+
+        if not foreign_keys:
+            raise ValueError('The foreign keys are empty')
+        elif not isinstance(foreign_keys, list):
+            raise TypeError('Foreign keys must be a list')
+
+        self._transport.add_relate_many_remote(self.get_name(), primary_key, address, service, foreign_keys)
+        return self
+
+    def set_link(self, link: str, uri: str) -> Action:
+        """
+        Set a link for the given URI.
+
+        :param link: The link name.
+        :param uri: The link URI.
+
+        :raises: ValueError
+
+        """
+
+        if not link:
+            raise ValueError('The link is empty')
+
+        if not uri:
+            raise ValueError('The URI is empty')
+
+        self._transport.add_link(self.get_name(), link, uri)
+        return self
+
+    def commit(self, action: str, params: List[Param] = None) -> Action:
+        """
+        Register a transaction to be called when request succeeds.
+
+        :param action: The action name.
+        :param params: Optional list of parameters.
+
+        :raises: ValueError
+
+        """
+
+        if not action:
+            raise ValueError('The action name is empty')
+
+        self._transport.add_transaction(
+            self._transport.TRANSACTION_COMMIT,
+            self.get_name(),
+            self.get_version(),
+            self.get_action_name(),
+            action,
+            params=params,
+        )
+        return self
+
+    def rollback(self, action: str, params: List[Param] = None) -> Action:
+        """
+        Register a transaction to be called when request fails.
+
+        :param action: The action name.
+        :param params: Optional list of parameters.
+
+        :raises: ValueError
+
+        """
+
+        if not action:
+            raise ValueError('The action name is empty')
+
+        self._transport.add_transaction(
+            self._transport.TRANSACTION_ROLLBACK,
+            self.get_name(),
+            self.get_version(),
+            self.get_action_name(),
+            action,
+            params=params,
+        )
+        return self
+
+    def complete(self, action: str, params: List[Param] = None) -> Action:
+        """
+        Register a transaction to be called when request finishes.
+
+        This transaction is ALWAYS executed, it doesn't matter if request fails or succeeds.
+
+        :param action: The action name.
+        :param params: Optional list of parameters.
+
+        :raises: ValueError
+
+        """
+
+        if not action:
+            raise ValueError('The action name is empty')
+
+        self._transport.add_transaction(
+            self._transport.TRANSACTION_COMPLETE,
+            self.get_name(),
+            self.get_version(),
+            self.get_action_name(),
+            action,
+            params=params,
+        )
+        return self
+
+    def call(
+        self,
+        service: str,
+        version: str,
+        action: str,
+        params: List[Param] = None,
+        files: List[File] = None,
+        timeout: int = EXECUTION_TIMEOUT,
+    ) -> Any:
+        """
+        Perform a run-time call to a service.
+
+        The result of this call is the return value from the remote action.
+
+        :param service: The service name.
+        :param version: The service version.
+        :param action: The action name.
+        :param params: Optional list of Param objects.
+        :param files: Optional list of File objects.
+        :param timeout: Optional timeout in milliseconds.
+
+        :raises: ValueError, KusanagiError
+
+        """
+
+        # Check that the call exists in the config
+        service_title = f'"{service}" ({version})'
+        try:
+            schema = self.get_service_schema(self.get_name(), self.get_version())
+            action_schema = schema.get_action_schema(self.get_action_name())
+            if not action_schema.has_call(service, version, action):
+                msg = f'Call not configured, connection to action on {service_title} aborted: "{action}"'
+                raise KusanagiError(msg)
+        except LookupError as err:
+            raise KusanagiError(err)
+
+        # Check that the remote action exists and can return a value, and if it doesn't issue a warning
+        try:
+            remote_action_schema = self.get_service_schema(service, version).get_action_schema(action)
+        except LookupError as err:  # pragma: no cover
+            self._logger.warning(err)
+        else:
+            if not remote_action_schema.has_return():
+                raise KusanagiError(f'Cannot return value from {service_title} for action: "{action}"')
+
+        validate_parameter_list(params)
+        validate_file_list(files)
+
+        # Check that the file server is enabled when one of the files is local
         if files:
             for file in files:
-                if not file.is_local():
-                    continue
+                if file.is_local():
+                    # Stop checking when one local file is found and the file server is enables
+                    if schema.has_file_server():
+                        break
 
-                # A local file is included in the files list
-                if self.__schema and self.__schema.has_file_server():
-                    # Files are supported
-                    break
+                    raise KusanagiError(f'File server not configured: {service_title}')
 
-                raise NoFileServerError(self.get_name(), self.get_version())
-
+        return_value = None
         transport = None
-        exc = None
+        client = Client(self._logger, tcp=self._state.values.is_tcp_enabled())
         try:
-            transport, result = runtime_call(
-                address,
-                self.__runtime_transport,
+            # NOTE: The transport set to the call won't have any data added by the action component
+            return_value, transport = client.call(
+                schema.get_address(),
                 self.get_action_name(),
                 [service, version, action],
-                **kwargs
-                )
-        except Exception as e:
-            exc = e
-
-        if transport:
-            # Clear default to succesfully merge dictionaries. Without
-            # this merge would be done with a default value that is not
-            # part of the payload.
-            self.__transport.set_defaults({})
-
-            for path in TRANSPORT_MERGEABLE_PATHS:
-                value = get_path(transport, path, None)
-                # Don't merge empty values
-                if value:
-                    self.__transport.merge(path, value)
-
-        # Add the call to the transport
-        payload = Payload().set_many({
-            'name': service,
-            'version': version,
-            'action': action,
-            'caller': self.get_action_name(),
-            'timeout': kwargs.get('timeout') or 1000,
-            })
-
-        if 'params' in kwargs:
-            payload.set('params', [param_to_payload(param) for param in kwargs['params']])
-
-        if 'files' in kwargs:
-            payload.set('files', [file_to_payload(file) for file in kwargs['files']])
-
-        self.__transport.push(
-            'calls/{}/{}'.format(nomap(self.get_name()), self.get_version()),
-            payload
+                timeout,
+                transport=TransportPayload(self._command.get_transport_data()),  # Use a clean transport for the call
+                params=params,
+                files=files,
+            )
+        finally:
+            # Always add the call info to the transport, even after an exception is raised during the call
+            self._transport.add_call(
+                self.get_name(),
+                self.get_version(),
+                self.get_action_name(),
+                service,
+                version,
+                action,
+                client.get_duration(),
+                params=params,
+                files=files,
+                timeout=timeout,
+                transport=transport,
             )
 
-        if exc:
-            raise exc
+        return return_value
 
-        return result
-
-    def defer_call(self, service, version, action, params=None, files=None):
-        """Register a deferred call to a service.
+    def defer_call(
+        self,
+        service: str,
+        version: str,
+        action: str,
+        params: List[Param] = None,
+        files: List[File] = None,
+    ) -> Action:
+        """
+        Register a deferred call to a service.
 
         :param service: The service name.
-        :type service: str
         :param version: The service version.
-        :type version: str
         :param action: The action name.
-        :type action: str
-        :param params: Optative list of Param objects.
-        :type params: list
-        :param files: Optative list of File objects.
-        :type files: list
+        :param params: Optional list of parameters.
+        :param files: Optional list of files.
 
-        :raises: NoFileServerError
-
-        :rtype: Action
+        :raises: ValueError, KusanagiError
 
         """
 
-        # Add files to transport
+        # Check that the deferred call exists in the config
+        service_title = f'"{service}" ({version})'
+        try:
+            schema = self.get_service_schema(self.get_name(), self.get_version())
+            action_schema = schema.get_action_schema(self.get_action_name())
+            if not action_schema.has_defer_call(service, version, action):
+                msg = f'Deferred call not configured, connection to action on {service_title} aborted: "{action}"'
+                raise KusanagiError(msg)
+        except LookupError as err:
+            raise KusanagiError(err)
+
+        # Check that the remote action exists and if it doesn't issue a warning
+        try:
+            self.get_service_schema(service, version).get_action_schema(action)
+        except LookupError as err:  # pragma: no cover
+            self._logger.warning(err)
+
+        validate_parameter_list(params)
+        validate_file_list(files)
+
+        # Check that the file server is enabled when one of the files is local
         if files:
-            self.__transport.set(
-                'files|{}|{}|{}|{}'.format(
-                    self.__gateway[1],
-                    nomap(service),
-                    version,
-                    nomap(action),
-                    ),
-                self.__files_to_payload(files),
-                delimiter='|',
-                )
+            for file in files:
+                if file.is_local():
+                    # Stop checking when one local file is found and the file server is enables
+                    if schema.has_file_server():
+                        break
 
-        payload = Payload().set_many({
-            'name': service,
-            'version': version,
-            'action': action,
-            'caller': self.get_action_name(),
-            })
-        if params:
-            payload.set('params', parse_params(params))
+                    raise KusanagiError(f'File server not configured: {service_title}')
 
-        # Calls are aggregated to transport calls
-        self.__transport.push(
-            'calls/{}/{}'.format(nomap(self.get_name()), self.get_version()),
-            payload
-            )
+        self._transport.add_defer_call(
+            self.get_name(),
+            self.get_version(),
+            self.get_action_name(),
+            service,
+            version,
+            action,
+            params=params,
+            files=files,
+        )
         return self
 
-    def remote_call(self, address, service, version, action, **kwargs):
-        """Register a call to a remote service.
+    def remote_call(
+        self,
+        address: str,
+        service: str,
+        version: str,
+        action: str,
+        params: List[Param] = None,
+        files: List[File] = None,
+        timeout: int = EXECUTION_TIMEOUT,
+    ) -> Action:
+        """
+        Register a call to a remote service in another realm.
 
-        :param address: Public address of a Gateway from another Realm.
-        :type address: str
+        These types of calls are done using KTP (KUSANAGI transport protocol).
+
+        :param address: Public address of a gateway from another realm.
         :param service: The service name.
-        :type service: str
         :param version: The service version.
-        :type version: str
         :param action: The action name.
-        :type action: str
-        :param params: Optative list of Param objects.
-        :type params: list
-        :param files: Optative list of File objects.
-        :type files: list
-        :param timeout: Optative call timeout in milliseconds.
-        :type timeout: int
+        :param params: Optional list of parameters.
+        :param files: Optional list of files.
+        :param timeout: Optional call timeout in milliseconds.
 
-        :raises: NoFileServerError
-
-        :rtype: Action
+        :raises: ValueError, KusanagiError
 
         """
 
-        if address[:3] != 'ktp':
-            address = 'ktp://{}'.format(address)
+        if not address.startswith('ktp://'):
+            raise ValueError(f'The address must start with "ktp://": {address}')
 
-        # Add files to transport
-        files = kwargs.get('files')
+        # Check that the deferred call exists in the config
+        service_title = f'[{address}] "{service}" ({version})'
+        try:
+            schema = self.get_service_schema(self.get_name(), self.get_version())
+            action_schema = schema.get_action_schema(self.get_action_name())
+            if not action_schema.has_remote_call(address, service, version, action):
+                msg = f'Remote call not configured, connection to action on {service_title} aborted: "{action}"'
+                raise KusanagiError(msg)
+        except LookupError as err:
+            raise KusanagiError(err)
+
+        # Check that the remote action exists and if it doesn't issue a warning
+        try:
+            self.get_service_schema(service, version).get_action_schema(action)
+        except LookupError as err:  # pragma: no cover
+            self._logger.warning(err)
+
+        validate_parameter_list(params)
+        validate_file_list(files)
+
+        # Check that the file server is enabled when one of the files is local
         if files:
-            self.__transport.set(
-                'files|{}|{}|{}|{}'.format(
-                    self.__gateway[1],
-                    nomap(service),
-                    version,
-                    nomap(action),
-                    ),
-                self.__files_to_payload(files),
-                delimiter='|',
-                )
+            for file in files:
+                if file.is_local():
+                    # Stop checking when one local file is found and the file server is enables
+                    if schema.has_file_server():
+                        break
 
-        payload = Payload().set_many({
-            'gateway': address,
-            'name': service,
-            'version': version,
-            'action': action,
-            'caller': self.get_action_name(),
-            'timeout': kwargs.get('timeout') or 1000,
-            })
+                    raise KusanagiError(f'File server not configured: {service_title}')
 
-        params = kwargs.get('params')
-        if params:
-            payload.set('params', parse_params(params))
-
-        # Calls are aggregated to transport calls
-        self.__transport.push(
-            'calls/{}/{}'.format(nomap(self.get_name()), self.get_version()),
-            payload
-            )
+        self._transport.add_remote_call(
+            address,
+            self.get_name(),
+            self.get_version(),
+            self.get_action_name(),
+            service,
+            version,
+            action,
+            params=params,
+            files=files,
+            timeout=timeout,
+        )
         return self
 
-    def error(self, message, code=None, status=None):
-        """Adds an error for the current Service.
+    def error(self, message: str, code: int = 0, status: str = ErrorPayload.DEFAULT_STATUS) -> Action:
+        """
+        Add an error for the current service.
 
         Adds an error object to the Transport with the specified message.
-        If the code is not set then 0 is assumed. If the status is not
-        set then 500 Internal Server Error is assumed.
 
         :param message: The error message.
-        :type message: str
         :param code: The error code.
-        :type code: int
         :param status: The HTTP status message.
-        :type status: str
-
-        :rtype: Action
 
         """
 
-        self.__transport.push(
-            'errors|{}|{}|{}'.format(
-                self.__gateway[1],
-                nomap(self.get_name()),
-                self.get_version(),
-                ),
-            ErrorPayload.new(message, code, status),
-            delimiter='|',
-            )
+        self._transport.add_error(self.get_name(), self.get_version(), message, code, status)
         return self
+
+
+class ActionSchema(object):
+    """Service action schema."""
+
+    DEFAULT_EXECUTION_TIMEOUT = EXECUTION_TIMEOUT
+
+    def __init__(self, name: str, payload: ActionSchemaPayload):
+        """
+        Constructor.
+
+        :param name: The name of the service action.
+        :param payload: The action schema payload.
+
+        """
+
+        self.__name = name
+        self.__payload = payload
+
+    def get_timeout(self) -> int:
+        """Get the maximum execution time defined in milliseconds for the action."""
+
+        return self.__payload.get([ns.TIMEOUT], self.DEFAULT_EXECUTION_TIMEOUT)
+
+    def is_deprecated(self) -> bool:
+        """Check if action has been deprecated."""
+
+        return self.__payload.get([ns.DEPRECATED], False)
+
+    def is_collection(self) -> bool:
+        """Check if the action returns a collection of entities."""
+
+        return self.__payload.get([ns.COLLECTION], False)
+
+    def get_name(self) -> str:
+        """Get action name."""
+
+        return self.__name
+
+    def get_entity_path(self) -> str:
+        """Get path to the entity."""
+
+        return self.__payload.get([ns.ENTITY_PATH], '')
+
+    def get_path_delimiter(self) -> str:
+        """Get delimiter to use for the entity path."""
+
+        return self.__payload.get([ns.PATH_DELIMITER], '/')
+
+    def resolve_entity(self, data: dict) -> dict:
+        """
+        Get entity from data.
+
+        Get the entity part, based upon the `entity-path` and `path-delimiter`
+        properties in the action configuration.
+
+        :param data: The object to get entity from.
+
+        :raises: LookupError
+
+        """
+
+        # The data is traversed only when there is a path, otherwise data is returned as is
+        path = self.get_entity_path()
+        if path:
+            delimiter = self.get_path_delimiter()
+            try:
+                for name in path.split(delimiter):
+                    data = data[name]
+            except (TypeError, KeyError):
+                raise LookupError(f'Cannot resolve entity for action: {self.get_name()}')
+
+        return data
+
+    def has_entity(self) -> bool:
+        """Check if an entity definition exists for the action."""
+
+        return self.__payload.exists([ns.ENTITY])
+
+    def get_entity(self) -> dict:
+        """Get the entity definition."""
+
+        return self.__payload.get_entity()
+
+    def has_relations(self) -> bool:
+        """Check if any relations exists for the action."""
+
+        return self.__payload.exists([ns.RELATIONS])
+
+    def get_relations(self) -> list:
+        """
+        Get the relations.
+
+        Each item is an array contains the relation type and the service name.
+
+        """
+
+        return self.__payload.get_relations()
+
+    def get_calls(self) -> list:
+        """
+        Get service run-time calls.
+
+        Each call item is a list containing the service name, the service version and the action name.
+
+        """
+
+        return self.__payload.get([ns.CALLS], [])
+
+    def has_call(self, name: str, version: str = None, action: str = None) -> bool:
+        """
+        Check if a run-time call exists for a service.
+
+        :param name: Service name.
+        :param version: Optional service version.
+        :param action: Optional action name.
+
+        """
+
+        for call in self.get_calls():
+            if call[0] not in ('*', name):
+                continue
+
+            if version and call[1] not in ('*', version) and not VersionString(version).match(call[1]):
+                continue
+
+            if action and call[2] not in ('*', action):
+                continue
+
+            # When all given arguments match the call return True
+            return True
+
+        # By default call does not exist
+        return False
+
+    def has_calls(self) -> bool:
+        """Check if any run-time call exists for the action."""
+
+        return self.__payload.exists([ns.CALLS])
+
+    def get_defer_calls(self) -> list:
+        """
+        Get deferred service calls.
+
+        Each call item is a list containing the service name, the service version and the action name.
+
+        """
+
+        return self.__payload.get([ns.DEFERRED_CALLS], [])
+
+    def has_defer_call(self, name, version: str = None, action: str = None) -> bool:
+        """
+        Check if a deferred call exists for a service.
+
+        :param name: Service name.
+        :param version: Optional service version.
+        :param action: Optional action name.
+
+        """
+
+        for call in self.get_defer_calls():
+            if call[0] not in ('*', name):
+                continue
+
+            if version and call[1] not in ('*', version) and not VersionString(version).match(call[1]):
+                continue
+
+            if action and call[2] not in ('*', action):
+                continue
+
+            # When all given arguments match the call return True
+            return True
+
+        # By default call does not exist
+        return False
+
+    def has_defer_calls(self):
+        """Check if any deferred call exists for the action."""
+
+        return self.__payload.exists([ns.DEFERRED_CALLS])
+
+    def get_remote_calls(self) -> list:
+        """
+        Get remote service calls.
+
+        Each remote call item is a list containing the public address of the gateway,
+        the service name, the service version and the action name.
+
+        """
+
+        return self.__payload.get([ns.REMOTE_CALLS], [])
+
+    def has_remote_call(self, address: str, name: str = None, version: str = None, action: str = None) -> bool:
+        """
+        Check if a remote call exists for a service.
+
+        :param address: Gateway address.
+        :param name: Optional service name.
+        :param version: Optional service version.
+        :param action: Optional action name.
+
+        """
+
+        for call in self.get_remote_calls():
+            if call[0] not in ('*', address):
+                continue
+
+            if name and call[1] not in ('*', name):
+                continue
+
+            if version and call[2] not in ('*', version) and not VersionString(version).match(call[2]):
+                continue
+
+            if action and call[3] not in ('*', action):
+                continue
+
+            # When all given arguments match the call return True
+            return True
+
+        # By default call does not exist
+        return False
+
+    def has_remote_calls(self) -> bool:
+        """Check if any remote call exists for the action."""
+
+        return self.__payload.exists([ns.REMOTE_CALLS])
+
+    def has_return(self) -> bool:
+        """Check if a return value is defined for the action."""
+
+        return self.__payload.exists([ns.RETURN])
+
+    def get_return_type(self) -> str:
+        """
+        Get the data type of the returned action value.
+
+        :raises: ValueError
+
+        """
+
+        if not self.__payload.exists([ns.RETURN, ns.TYPE]):
+            raise ValueError(f'Return value not defined for action: {self.get_name()}')
+
+        return self.__payload.get([ns.RETURN, ns.TYPE])
+
+    def get_params(self) -> List[str]:
+        """Get the parameter names defined for the action."""
+
+        return self.__payload.get_param_names()
+
+    def has_param(self, name: str) -> bool:
+        """
+        Check that schema for a parameter exists.
+
+        :param name: A parameter name.
+
+        """
+
+        return name in self.get_params()
+
+    def get_param_schema(self, name: str) -> ParamSchema:
+        """
+        Get the schema for a parameter.
+
+        :param name: The parameter name.
+
+        :raises: LookupError
+
+        """
+
+        if not self.has_param(name):
+            raise LookupError(f'Cannot resolve schema for parameter: {name}')
+
+        return ParamSchema(self.__payload.get_param_schema_payload(name))
+
+    def get_files(self) -> List[str]:
+        """Get the file parameter names defined for the action."""
+
+        return self.__payload.get_file_names()
+
+    def has_file(self, name: str) -> bool:
+        """
+        Check that schema for a file parameter exists.
+
+        :param name: A file parameter name.
+
+        """
+
+        return name in self.get_files()
+
+    def get_file_schema(self, name: str) -> FileSchema:
+        """
+        Get schema for a file parameter.
+
+        :param name: File parameter name.
+
+        :raises: LookupError
+
+        """
+
+        if not self.has_file(name):
+            raise LookupError(f'Cannot resolve schema for file parameter: "{name}"')
+
+        return FileSchema(self.__payload.get_file_schema_payload(name))
+
+    def get_tags(self) -> List[str]:
+        """Get the tags defined for the action."""
+
+        return list(self.__payload.get([ns.TAGS], []))
+
+    def has_tag(self, name: str) -> bool:
+        """
+        Check that a tag is defined for the action.
+
+        The tag name is case sensitive.
+
+        :param name: The tag name.
+
+        """
+
+        return name in self.get_tags()
+
+    def get_http_schema(self) -> HttpActionSchema:
+        """Get HTTP action schema."""
+
+        return HttpActionSchema(self.__payload.get_http_action_schema_payload())
+
+
+class HttpActionSchema(object):
+    """HTTP semantics of an action schema in the framework."""
+
+    DEFAULT_METHOD = 'GET'
+    DEFAULT_INPUT = 'query'
+    DEFAULT_BODY = 'text/plain'
+
+    def __init__(self, payload: HttpActionSchemaPayload):
+        """
+        Constructor.
+
+        :param payload: The HTTP action schema payload.
+
+        """
+
+        self.__payload = payload
+
+    def is_accessible(self) -> bool:
+        """Check if the gateway has access to the action."""
+
+        return self.__payload.get([ns.GATEWAY], True)
+
+    def get_method(self) -> str:
+        """Get HTTP method for the action."""
+
+        return self.__payload.get([ns.METHOD], self.DEFAULT_METHOD)
+
+    def get_path(self) -> str:
+        """Get URL path for the action."""
+
+        return self.__payload.get([ns.PATH], '')
+
+    def get_input(self) -> str:
+        """Get default location of parameters for the action."""
+
+        return self.__payload.get([ns.INPUT], self.DEFAULT_INPUT)
+
+    def get_body(self) -> str:
+        """
+        Get expected MIME type of the HTTP request body.
+
+        Result may contain a comma separated list of MIME types.
+
+        """
+
+        return ','.join(self.__payload.get([ns.BODY], [self.DEFAULT_BODY]))

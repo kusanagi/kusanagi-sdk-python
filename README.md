@@ -9,7 +9,7 @@ Requirements
 ------------
 
 * [KUSANAGI framework](http://kusanagi.io) 2.0+
-* [Python](https://www.python.org/downloads/) 3.6+
+* [Python](https://www.python.org/downloads/) 3.7+
 * [libzmq](http://zeromq.org/intro:get-the-software) 4.1.5+
 
 Installation
@@ -24,7 +24,7 @@ $ pip install kusanagi-sdk-python
 Or to run all unit tests and code coverage:
 
 ```
-$ python setup.py test
+$ pytest
 ```
 
 Getting Started

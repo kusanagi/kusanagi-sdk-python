@@ -5,160 +5,149 @@
 #
 # For the full copyright and license information, please view the LICENSE
 # file that was distributed with this source code.
-import logging
+from __future__ import annotations
 
-from ..errors import KusanagiError
-from ..logging import INFO
-from ..logging import value_to_log_string
-from ..schema import SchemaRegistry
-from ..utils import Singleton
+from typing import TYPE_CHECKING
+
+from .lib.events import Events
+from .lib.logging import INFO
+from .lib.logging import Logger
+from .lib.logging import value_to_log_string
+from .lib.server import create_server
+from .lib.singleton import Singleton
+
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import Callable
+
+    # Component callback types
+    Callback = Callable[['Component'], Any]
+    ErrorCallback = Callable[[Exception], Any]
 
 
-class ComponentError(KusanagiError):
-    """Exception calss for component errors."""
-
-
-class Component(object, metaclass=Singleton):
-    """Base KUSANAGI SDK component class."""
+class Component(metaclass=Singleton):
+    """KUSANAGI SDK component class."""
 
     def __init__(self):
+        # Private
         self.__resources = {}
-        self.__startup_callback = None
-        self.__shutdown_callback = None
-        self.__error_callback = None
-        self._callbacks = {}
-        self._runner = None
-        self.__logger = logging.getLogger('kusanagi.sdk')
+        self.__startup = None
+        self.__shutdown = None
+        self.__error = None
+        self.__logger = Logger(__name__)
 
-    def has_resource(self, name):
-        """Check if a resource name exist.
+        # Protected
+        self._callbacks = {}
+
+    def has_resource(self, name) -> bool:
+        """
+        Check if a resource name exist.
 
         :param name: Name of the resource.
-        :type name: str
-
-        :rtype: bool
 
         """
 
         return name in self.__resources
 
-    def set_resource(self, name, callable):
-        """Store a resource.
+    def set_resource(self, name: str, factory: Callback):
+        """
+        Store a resource.
 
         Callback receives the `Component` instance as first argument.
 
         :param name: Name of the resource.
-        :type name: str
-        :param callable: A callable that returns the resource value.
-        :type callable: function
+        :param factory: A callable that returns the resource value.
 
-        :raises: ComponentError
+        :raises: ValueError
 
         """
 
-        value = callable(self)
+        value = factory(self)
         if value is None:
-            err = 'Invalid result value for resource "{}"'.format(name)
-            raise ComponentError(err)
+            raise ValueError(f'Invalid result value for resource "{name}"')
 
         self.__resources[name] = value
 
-    def get_resource(self, name):
-        """Get a resource.
+    def get_resource(self, name: str) -> Any:
+        """
+        Get a resource.
 
         :param name: Name of the resource.
-        :type name: str
 
-        :raises: ComponentError
-
-        :rtype: object
+        :raises: LookupError
 
         """
 
         if not self.has_resource(name):
-            raise ComponentError('Resource "{}" not found'.format(name))
+            raise LookupError(f'Resource "{name}" not found')
 
         return self.__resources[name]
 
-    def startup(self, callback):
-        """Register a callback to be called during component startup.
-
-        Callback receives a single argument with the Component instance.
+    def startup(self, callback: Callback) -> Component:
+        """
+        Register a callback to be called during component startup.
 
         :param callback: A callback to execute on startup.
-        :type callback: function
-
-        :rtype: Component
 
         """
 
-        self.__startup_callback = callback
+        self.__startup = callback
         return self
 
-    def shutdown(self, callback):
-        """Register a callback to be called during component shutdown.
-
-        Callback receives a single argument with the Component instance.
+    def shutdown(self, callback: Callback) -> Component:
+        """
+        Register a callback to be called during component shutdown.
 
         :param callback: A callback to execute on shutdown.
-        :type callback: function
-
-        :rtype: Component
 
         """
 
-        self.__shutdown_callback = callback
+        self.__shutdown = callback
         return self
 
-    def error(self, callback):
-        """Register a callback to be called on message callback errors.
+    def error(self, callback: ErrorCallback) -> Component:
+        """
+        Register a callback to be called on error.
 
-        Callback receives a single argument with the Exception instance.
-
-        :param callback: A callback to execute a message callback fails.
-        :type callback: function
-
-        :rtype: Component
+        :param callback: A callback to execute when the component fails to handle a request.
 
         """
 
-        self.__error_callback = callback
+        self.__error = callback
         return self
 
-    def run(self):
-        """Run SDK component.
-
-        Calling this method checks command line arguments before
-        component server starts.
-
+    def log(self, value: Any, level: int = INFO) -> Component:
         """
-
-        if not self._runner:
-            # Child classes must create a component runner instance
-            raise Exception('No component runner defined')
-
-        if self.__startup_callback:
-            self._runner.set_startup_callback(self.__startup_callback)
-
-        if self.__shutdown_callback:
-            self._runner.set_shutdown_callback(self.__shutdown_callback)
-
-        if self.__error_callback:
-            self._runner.set_error_callback(self.__error_callback)
-
-        # Create the global schema registry instance on run
-        SchemaRegistry()
-
-        self._runner.set_callbacks(self._callbacks)
-        self._runner.run()
-
-    def log(self, value, level=INFO):
-        """Write a value to KUSANAGI logs.
+        Write a value to KUSANAGI logs.
 
         Given value is converted to string before being logged.
 
         Output is truncated to have a maximum of 100000 characters.
 
+        :param value: The value to log.
+        :param level: An optional log level to use for the log message.
+
         """
 
         self.__logger.log(level, value_to_log_string(value))
+        return self
+
+    def run(self) -> bool:
+        """Run the SDK component."""
+
+        # Create a helper to process component events
+        events = Events(self.__startup, self.__shutdown, self.__error)
+
+        # Run the server and check if all the callbacks run successfully
+        success = False
+        if events.startup(self):
+            try:
+                server = create_server(self, self._callbacks, events.error)
+                server.start()
+            except Exception as exc:
+                self.__logger.exception(f'Component error: {exc}')
+            else:
+                success = True
+
+        # Return False when shutdown fails otherwise use the success value
+        return success if events.shutdown(self) else False

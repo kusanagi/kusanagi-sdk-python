@@ -1,0 +1,23 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+msgpack = "*"
+pyzmq = "*"
+
+[dev-packages]
+pylama = "*"
+pytest = "*"
+v = {version = "*",editable = true}
+pytest-cov = "*"
+isort = "*"
+"flake8" = "*"
+pylint = "*"
+pytest-mock = "*"
+pytest-mypy = "*"
+pytest-asyncio = "*"
+
+[requires]
+python_version = "3.7"

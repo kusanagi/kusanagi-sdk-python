@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2020-07-05
+### Changed
+- Code refactor with typing and pure python3
+
 ## [2.0.0] - 2020-03-01
 ### Fixed
 - Fixes Param type resolution when no type is given

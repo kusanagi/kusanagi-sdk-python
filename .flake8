@@ -1,3 +1,4 @@
 [flake8]
-# Github review line length
-max-line-length=119
+max-line-length = 119
+ignore = T499
+exclude = .git,__pycache__,.venv,venv,tests,build,dist

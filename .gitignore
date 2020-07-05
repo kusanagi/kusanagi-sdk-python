@@ -9,11 +9,9 @@ venv/
 *.egg
 .cache/
 .pytest_cache/
-build/
+.mypy_cache/
 docs/build/
 
-Pipfile
-Pipfile.lock
 pip-log.txt
 pip-delete-this-directory.txt
 .coverage
