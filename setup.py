@@ -2,14 +2,11 @@
 from setuptools import find_packages
 from setuptools import setup
 
-from kusanagi.sdk import __license__
-from kusanagi.sdk import __version__
-
 setup(
     name='kusanagi-sdk-python',
-    version=__version__,
+    version='2.1.0',
     url='http://kusanagi.io/',
-    license=__license__,
+    license='MIT',
     author='Jerónimo Albi',
     author_email='jeronimo.albi@kusanagi.io',
     description='Python SDK for the KUSANAGI™ framework',
