@@ -9,7 +9,7 @@ Requirements
 ------------
 
 * [KUSANAGI framework](http://kusanagi.io) 2.0+
-* [Python](https://www.python.org/downloads/) 3.7+
+* [Python](https://www.python.org/downloads/) 3.8+
 * [libzmq](http://zeromq.org/intro:get-the-software) 4.1.5+
 
 Installation
@@ -21,10 +21,12 @@ Enter the following command to install the SDK in your local environment:
 $ pip install kusanagi-sdk-python
 ```
 
-Or to run all unit tests and code coverage:
+The unit tests and code coverage runs using `pytest`.
+
+To run the tests [install poetry](https://python-poetry.org/docs/#installation) and run:
 
 ```
-$ pytest
+$ poetry run pytest
 ```
 
 Getting Started
