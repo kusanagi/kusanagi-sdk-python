@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='kusanagi-sdk-python',
-    version='2.1.0',
+    version='2.1.1',
     url='http://kusanagi.io/',
     license='MIT',
     author='Jerónimo Albi',

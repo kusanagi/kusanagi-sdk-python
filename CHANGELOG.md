@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2021-02-27
+### Changed
+- Remove unused f-strings
+- Change copyright year
+- Remove version and license import from setup.py
+
 ## [2.1.0] - 2020-07-05
 ### Changed
 - Code refactor with typing and pure python3

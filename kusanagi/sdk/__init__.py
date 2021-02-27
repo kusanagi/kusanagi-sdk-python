@@ -7,7 +7,7 @@
 # file that was distributed with this source code.
 __license__ = "MIT"
 __copyright__ = "Copyright (c) 2016-2021 KUSANAGI S.L. (http://kusanagi.io)"
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # flake8: noqa
 from .action import Action
