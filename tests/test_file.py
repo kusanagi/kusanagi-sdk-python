@@ -117,10 +117,10 @@ def test_file_local_read_fail(DATA_DIR):
 
     # Creation check that the file exists
     with pytest.raises(KusanagiError):
-        file = File('foo', path=f'file://invalid.txt', mime='text/plain', size=42)
+        file = File('foo', path='file://invalid.txt', mime='text/plain', size=42)
 
     # Create a valid file and the change the file name to an invalid one
-    with mock.patch(f'kusanagi.sdk.file.open', create=True) as mocked_open:
+    with mock.patch('kusanagi.sdk.file.open', create=True) as mocked_open:
         mocked_open.side_effect = Exception
 
         path = os.path.join(DATA_DIR, 'file.txt')
