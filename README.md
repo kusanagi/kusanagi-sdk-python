@@ -21,12 +21,19 @@ Enter the following command to install the SDK in your local environment:
 $ pip install kusanagi-sdk-python
 ```
 
-The unit tests and code coverage runs using `pytest`.
+[Poetry](https://python-poetry.org/docs/#installation) is required to run the test and coverage.
 
-To run the tests [install poetry](https://python-poetry.org/docs/#installation) and run:
+The tests run using `pytest`:
 
 ```
 $ poetry run pytest
+```
+
+Code coverage can be run as:
+
+```
+$ poetry run coverage run
+$ poetry run coverage report
 ```
 
 Getting Started

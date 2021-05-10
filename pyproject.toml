@@ -31,7 +31,6 @@ msgpack = "1.0.0"
 [tool.poetry.dev-dependencies]
 pytest = "5.4.3"
 pytest-asyncio = "^0.14.0"
-pytest-cov = "^2.11.1"
 pytest-mock = "^3.5.1"
 pytest-mypy = "^0.8.0"
 pylint = "^2.7.1"

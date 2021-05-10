@@ -1,3 +1,10 @@
+[run]
+# Run pytest to generate coverage
+command_line = -m pytest
+
+# Only run coverage inside the kusanagi folder
+include = kusanagi/*
+
 [report]
 # Regexes for lines to exclude from consideration
 exclude_lines =
