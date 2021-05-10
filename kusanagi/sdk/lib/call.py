@@ -160,7 +160,7 @@ class AsyncClient(object):
 
         # Check that the response is a dictionary
         if not isinstance(payload, dict):
-            self.__logger.error(f'Run-time call response data is not a dictionary')
+            self.__logger.error('Run-time call response data is not a dictionary')
             raise CallError('The payload data is not valid')
 
         # Check if the payload is an error payload, and if so use to raise an error
