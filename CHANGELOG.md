@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Added
+- Github actions config files to test and release
+
+### Changed
+- Change mypy config to check kusanagi folder by default
+- Change project to run code linting as a separate command
+- Change project to run coverage as a separate command
+
+### Fixed
+- Fix python versions in pyproject.toml
 
 ## [3.0.0] - 2021-03-01
 ### Changed
