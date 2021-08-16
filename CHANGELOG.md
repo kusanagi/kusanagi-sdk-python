@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 - Fix python versions in pyproject.toml
-- Replaced deprecated Task.all_tasks()
+- Replaced deprecated `Task.all_tasks()`
+- Fix AsyncHttpRequest & AsyncResponse private property access
 
 ## [3.0.0] - 2021-03-01
 ### Changed

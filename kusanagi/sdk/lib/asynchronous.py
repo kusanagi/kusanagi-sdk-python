@@ -77,7 +77,17 @@ class AsyncHttpRequest(HttpRequest):
 
         super().__init__(payload)
         # Convert the files to async files
-        self.__files = {name: file_to_async(file) for name, file in self.__files}
+        self.__files = {file.get_name(): file_to_async(file) for file in super().get_files()}
+
+    def has_file(self, name: str) -> bool:
+        """
+        Check if a file was uploaded in current request.
+
+        :param name: A file name.
+
+        """
+
+        return name in self.__files
 
     def get_file(self, name: str) -> AsyncFile:
         """
@@ -87,12 +97,16 @@ class AsyncHttpRequest(HttpRequest):
 
         """
 
-        return super().get_file(name)
+        # When the file doesnt exist return an empty file
+        if not self.has_file(name):
+            return AsyncFile(name)
+
+        return self.__files[name]
 
     def get_files(self) -> List[AsyncFile]:
         """Get uploaded files."""
 
-        return super().get_files()
+        return list(self.__files.values())
 
 
 class AsyncResponse(Response):
@@ -257,15 +271,17 @@ def AsyncFile(File):
 
         # When the file is remote read it from the remote file server, otherwise
         # the file is a local file, so check if it exists and read its contents.
-        if self.__path.startswith('http://'):
+        path = self.get_path()
+        if path.startswith('http://'):
             # Parse the remote file URL and open a connection to the file server
-            url = urllib.parse.urlsplit(self.__path)
+            url = urllib.parse.urlsplit(path)
             reader, writer = await asyncio.open_connection(url.hostname, 80)
             # Prepare the HTTP request
+            token = self.get_token()
             request = [
                 f'GET {url.path} HTTP/1.0',
                 f'Host: {url.hostname}',
-                f'X-Token: {self.__token}',
+                f'X-Token: {token}',
                 '\r\n'
             ]
             writer.write('\r\n'.join(request).encode('utf8'))
@@ -281,16 +297,16 @@ def AsyncFile(File):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                raise KusanagiError(f'Failed to read file: "{self.__path}"')
+                raise KusanagiError(f'Failed to read file: "{path}"')
             finally:
                 writer.close()
-        elif os.path.isfile(self.__path[7:]):
+        elif os.path.isfile(path[7:]):
             try:
                 # Read the local file contents
-                with open(self.__path[7:], 'rb') as f:
+                with open(path[7:], 'rb') as f:
                     return f.read()
             except Exception:
-                raise KusanagiError(f'Failed to read file: "{self.__path}"')
+                raise KusanagiError(f'Failed to read file: "{path}"')
         else:
             # The file is local and can't be read
-            raise KusanagiError(f'File does not exist in path: "{self.__path}"')
+            raise KusanagiError(f'File does not exist in path: "{path}"')
