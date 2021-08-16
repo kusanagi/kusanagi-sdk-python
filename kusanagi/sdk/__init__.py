@@ -8,7 +8,7 @@
 
 __license__ = "MIT"
 __copyright__ = "Copyright (c) 2016-2021 KUSANAGI S.L. (http://kusanagi.io)"
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 # flake8: noqa
 from .action import Action
