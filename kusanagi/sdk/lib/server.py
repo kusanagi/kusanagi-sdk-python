@@ -374,7 +374,7 @@ class Server(object):
         # Cancel all ongoing tasks before stopping the loop
         self.__logger.debug('Stopping the server...')
         error = None
-        tasks = asyncio.Task.all_tasks()
+        tasks = asyncio.all_tasks()
         for task in tasks:
             # When an exception is found in a task save it
             if task.done() and task.exception() and not error:

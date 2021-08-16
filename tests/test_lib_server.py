@@ -49,8 +49,8 @@ def test_lib_server_stop(mocker, input_):
 
     mocker.patch('kusanagi.sdk.lib.server.asyncio.get_event_loop')
     task = mocker.Mock()
-    Task = mocker.patch('kusanagi.sdk.lib.server.asyncio.Task')
-    Task.all_tasks.return_value = [task]
+    all_tasks = mocker.patch('kusanagi.sdk.lib.server.asyncio.all_tasks')
+    all_tasks.return_value = [task]
     server = Server(mocker.Mock(), {}, None, input_)
 
     # Unfinished tasks must be canceled
