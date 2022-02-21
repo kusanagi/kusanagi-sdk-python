@@ -313,6 +313,7 @@ class Server(object):
         try:
             ctx = zmq.asyncio.Context()
             socket = ctx.socket(zmq.REP)
+            socket.hwm = 0
             socket.bind(channel)
         except zmq.error.ZMQError as err:  # pragma: no cover
             if err.errno == errno.EADDRINUSE:
