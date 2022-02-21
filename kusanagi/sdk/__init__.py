@@ -1,5 +1,5 @@
 # Python SDK for the KUSANAGI(tm) framework (http://kusanagi.io)
-# Copyright (c) 2016-2021 KUSANAGI S.L. All rights reserved.
+# Copyright (c) 2016-2022 KUSANAGI S.L. All rights reserved.
 #
 # Distributed under the MIT license.
 #
@@ -7,8 +7,8 @@
 # file that was distributed with this source code.
 
 __license__ = "MIT"
-__copyright__ = "Copyright (c) 2016-2021 KUSANAGI S.L. (http://kusanagi.io)"
-__version__ = "3.0.1"
+__copyright__ = "Copyright (c) 2016-2022 KUSANAGI S.L. (http://kusanagi.io)"
+__version__ = "3.0.0"
 
 # flake8: noqa
 from .action import Action
