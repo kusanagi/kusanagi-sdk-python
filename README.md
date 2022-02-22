@@ -9,8 +9,8 @@ Requirements
 ------------
 
 * [KUSANAGI framework](http://kusanagi.io) 4.0+
-* [Python](https://www.python.org/downloads/) 3.8+
-* [libzmq](http://zeromq.org/intro:get-the-software) 4.2.5+
+* [Python](https://www.python.org/downloads/) 3.9+
+* [libzmq](http://zeromq.org/intro:get-the-software) 4.3.4+
 
 Installation
 ------------
