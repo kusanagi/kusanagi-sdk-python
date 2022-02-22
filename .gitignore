@@ -2,8 +2,8 @@ __pycache__/
 sdist/
 dist/
 var/
-venv/
-.venv/
+venv*/
+.venv*/
 .eggs/
 *.egg-info/
 *.egg
