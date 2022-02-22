@@ -593,7 +593,7 @@ class Action(Api):
         try:
             # NOTE: The transport set to the call won't have any data added by the action component
             return_value, transport = client.call(
-                schema.get_address(),
+                self._state.values.get_component_address(),
                 self.get_action_name(),
                 [service, version, action],
                 timeout,

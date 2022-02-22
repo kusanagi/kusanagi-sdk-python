@@ -26,6 +26,11 @@ PARSER.add_argument(
     choices=['service', 'middleware'],
 )
 PARSER.add_argument(
+    '-a', '--address',
+    help='Component addess as IP:PORT.',
+    required=True,
+)
+PARSER.add_argument(
     '-D', '--debug',
     help='Enable component debug.',
     action='store_true',
@@ -80,11 +85,14 @@ def parse_args() -> Input:
     # Get the name of the current script
     caller_frame = inspect.getouterframes(inspect.currentframe())[-1]
     source_file = caller_frame[1]
+
     # Use the name as program name for the parser
     PARSER.prog = source_file
+
     # Get the CLI values
     values = vars(PARSER.parse_args())
     values['var'] = parse_key_value_list(values['var'])
+
     return Input(source_file, **values)
 
 
@@ -157,6 +165,13 @@ class Input(object):
         """Get the KUSANAGI framework version."""
 
         return self.__values['framework_version']
+
+    def get_component_address(self) -> str:
+        """Get the local component address as 127.0.0.1:PORT."""
+
+        port = self.__values['address'].split(':')[1]
+
+        return f'127.0.0.1:{port}'
 
     def get_socket(self) -> str:
         """Get the ZMQ socket name."""

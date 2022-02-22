@@ -253,7 +253,7 @@ class HttpResponse(object):
         # If it exists get the original header name from the payload headers
         uppercase_name = name.upper()
         original_name = None
-        for header_name in self.__payload.get([ns.HEADERS]).keys():
+        for header_name in self.__payload.get([ns.HEADERS], {}).keys():
             if header_name.upper() == uppercase_name:
                 original_name = header_name
                 break
