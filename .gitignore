@@ -8,6 +8,7 @@ venv/
 *.egg-info/
 *.egg
 .cache/
+.tox/
 .pytest_cache/
 .mypy_cache/
 docs/build/

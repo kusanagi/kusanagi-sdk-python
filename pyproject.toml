@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kusanagi-sdk-python"
-version = "3.0.1"
+version = "4.0.0"
 description = "Python SDK for the KUSANAGI™ framework"
 authors = ["Jeronimo Albi <jeronimo.albi@gmail.com>"]
 license = "MIT"
@@ -11,8 +11,8 @@ packages = [
 ]
 classifiers = [
     'Intended Audience :: Developers',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
     'Operating System :: POSIX :: Linux',
     'Topic :: Software Development :: Libraries :: Application Frameworks',
     'Topic :: Software Development :: Libraries :: Python Modules',
@@ -24,9 +24,9 @@ include = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8 || ^3.9"
-pyzmq = "19.0.0"
-msgpack = "1.0.0"
+python = ">= 3.9"
+pyzmq = "^22.3.0"
+msgpack = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "5.4.3"
@@ -39,6 +39,7 @@ coverage = "^5.4"
 mypy = "^0.812"
 isort = "^5.7.0"
 flake8 = "^3.8.4"
+tox = "^3.24.5"
 
 [tool.poetry.urls]
 "Releases" = "https://github.com/kusanagi/kusanagi-sdk-python/releases"
