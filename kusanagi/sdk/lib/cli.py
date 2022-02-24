@@ -36,6 +36,10 @@ PARSER.add_argument(
     action='store_true',
 )
 PARSER.add_argument(
+    '-i', '--ipc',
+    help='IPC socket name.',
+)
+PARSER.add_argument(
     '-L', '--log-level',
     help='Enable a logging using a numeric Syslog severity value to set the level.',
     type=int,
@@ -50,10 +54,6 @@ PARSER.add_argument(
     '-p', '--framework-version',
     help='KUSANAGI framework version.',
     required=True,
-)
-PARSER.add_argument(
-    '-s', '--socket',
-    help='IPC socket name.',
 )
 PARSER.add_argument(
     '-t', '--tcp',
@@ -179,12 +179,12 @@ class Input(object):
         if self.is_tcp_enabled():
             return ''
 
-        if not self.__values['socket']:
+        if not self.__values['ipc']:
             # Create a default name for the socket when no name is available.
             # The 'ipc://' prafix is removed from the string to get the socket name.
             return ipc(self.get_component(), self.get_name(), self.get_version())[6:]
         else:
-            return self.__values['socket']
+            return self.__values['ipc']
 
     def get_tcp(self) -> int:
         """

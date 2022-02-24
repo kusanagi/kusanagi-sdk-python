@@ -23,7 +23,7 @@ def test_lib_parse_args(mocker):
     namespace.name = 'foo'
     namespace.version = '1.0.0'
     namespace.framework_version = '3.0.0'
-    namespace.socket = '@kusanagi-1.2.3.4-77'
+    namespace.ipc = '@kusanagi-1.2.3.4-77'
     namespace.timeout = 10000
     namespace.debug = True
     namespace.var = ['foo=bar', 'bar=baz']
@@ -72,7 +72,7 @@ def test_lib_input_ipc():
         name='foo',
         version='1.0.0',
         framework_version='3.0.0',
-        socket='@kusanagi-1.2.3.4-77',
+        ipc='@kusanagi-1.2.3.4-77',
         timeout=10000,
         debug=True,
         var=variables,
@@ -109,7 +109,7 @@ def test_lib_input_ipc_default():
         name='foo',
         version='1.0.0',
         framework_version='3.0.0',
-        socket=None,
+        ipc=None,
         timeout=10000,
         debug=True,
         var=variables,
@@ -147,7 +147,7 @@ def test_lib_input_tcp():
         name='foo',
         version='1.0.0',
         framework_version='3.0.0',
-        socket=None,
+        ipc=None,
         timeout=10000,
         debug=True,
         var=variables,

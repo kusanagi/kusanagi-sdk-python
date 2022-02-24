@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Change incoming socket HWM to avoid limiting the number of incoming requests
 - Runtime calls now get the component address from the CLI arguments
   instead of the mappings
+- CLI --socket option is now called --ipc
 
 ## [3.0.1] - 2021-08-16
 ### Added

@@ -54,7 +54,7 @@ def input_(DATA_DIR):
         version='1.0.0',
         framework_version='3.0.0',
         address='127.0.0.1:4242',
-        socket='@kusanagi-1.2.3.4-77',
+        ipc='@kusanagi-1.2.3.4-77',
         timeout=10000,
         debug=True,
         var={'foo': 'bar', 'bar': 'baz'},
