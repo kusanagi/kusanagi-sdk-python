@@ -2,6 +2,7 @@ Python SDK for the KUSANAGI framework
 =====================================
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Tests](https://github.com/kusanagi/kusanagi-sdk-python/actions/workflows/test.yml/badge.svg)
 
 **Python** SDK to interface with the **KUSANAGI**™ framework (http://kusanagi.io).
 
