@@ -28,7 +28,7 @@ def test_service_schema_defaults():
     schema = ServiceSchema(ServiceSchemaPayload({}, name='foo', version='1.0.0'))
     assert schema.get_name() == 'foo'
     assert schema.get_version() == '1.0.0'
-    assert schema.get_address() == ''
+    assert schema.get_address() == []
     assert not schema.has_file_server()
     assert schema.get_actions() == []
     assert not schema.has_action('foo')

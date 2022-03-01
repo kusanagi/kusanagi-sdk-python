@@ -219,7 +219,7 @@ def service_schema():
     from kusanagi.sdk.lib.payload.service import ServiceSchemaPayload
 
     payload = {
-        ns.ADDRESS: '6.6.6.6:77',
+        ns.ADDRESS: ['6.6.6.6:77'],
         ns.FILES: True,
         ns.ACTIONS: {
             'foo': {},

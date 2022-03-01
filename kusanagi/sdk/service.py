@@ -67,10 +67,10 @@ class ServiceSchema(object):
 
         return self.__payload.get_version()
 
-    def get_address(self) -> str:
-        """Get the network address of the service."""
+    def get_address(self) -> list[str]:
+        """Get the internal addresses of the service hosts."""
 
-        return self.__payload.get([ns.ADDRESS], '')
+        return self.__payload.get([ns.ADDRESS], [])
 
     def has_file_server(self) -> bool:
         """Check if service has a file server."""
