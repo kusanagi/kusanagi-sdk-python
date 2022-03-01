@@ -157,6 +157,7 @@ class AsyncAction(Action):
 
         return AsyncFile(name, path, mime=mime)
 
+    # TODO: Refactor to remove duplication with Action.call()
     async def call(
         self,
         service: str,
@@ -221,7 +222,7 @@ class AsyncAction(Action):
         try:
             # NOTE: The transport set to the call won't have any data added by the action component
             return_value, transport = await client.call(
-                schema.get_address(),
+                self._state.values.get_component_address(),
                 self.get_action_name(),
                 [service, version, action],
                 timeout,
