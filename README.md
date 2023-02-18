@@ -9,7 +9,7 @@ Python SDK for the KUSANAGI framework
 Requirements
 ------------
 
-* [KUSANAGI framework](http://kusanagi.io) 4.0+
+* [KUSANAGI framework](http://kusanagi.io) 5.0+
 * [Python](https://www.python.org/downloads/) 3.9+
 * [libzmq](http://zeromq.org/intro:get-the-software) 4.3.4+
 
