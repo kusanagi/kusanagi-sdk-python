@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [ epoch-4 ]
+    branches: [ epoch-* ]
   pull_request:
-    branches: [ epoch-4 ]
+    branches: [ epoch-* ]
 
 jobs:
   build:
