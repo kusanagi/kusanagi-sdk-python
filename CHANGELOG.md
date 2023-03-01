@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [5.0.0] - 2023-03-01
+### Changed
+- Update version to 5.0.0
+
 ## [4.0.0] - 2022-03-01
 ### Added
 - Support for the component address CLI "--address" argument
